@@ -8,6 +8,7 @@ const $ = (id) => document.getElementById(id);
 const audio = new AudioEngine();
 const score = new ScorePanel("osmd", "score-panel");
 const terrain = new Terrain("stage");
+window.__terrain = terrain; // debug
 
 let analysis = null;
 let maxVoices = 4;
@@ -54,6 +55,10 @@ $("camera-select").addEventListener("change", (e) => terrain.setCameraMode(e.tar
 $("camdir-select").addEventListener("change", (e) => terrain.setCameraSide(e.target.value));
 $("bg-select").addEventListener("change", (e) => terrain.setBackgroundMode(e.target.value));
 $("beat-select").addEventListener("change", (e) => terrain.setBeatMode(e.target.value));
+$("shape-select").addEventListener("change", (e) => terrain.setTerrainShape(e.target.value));
+$("style-select").addEventListener("change", (e) => terrain.setRenderStyle(e.target.value));
+$("track-select").addEventListener("change", (e) => terrain.setTrackWidth(e.target.value));
+$("stage-select").addEventListener("change", (e) => terrain.setStage(e.target.value));
 let zoomTimer = null;
 $("score-zoom").addEventListener("input", (e) => {
   $("score-zoom-val").textContent = e.target.value;
@@ -90,6 +95,11 @@ async function uploadFile(file) {
   terrain.setCameraSide($("camdir-select").value);
   terrain.setBackgroundMode($("bg-select").value);
   terrain.setBeatMode($("beat-select").value);
+  // 토글 초기값 적용(재빌드 유발 setter 대신 상태만 세팅 후 load 한 번)
+  terrain.terrainShape = $("shape-select").value;
+  terrain.renderStyle = $("style-select").value;
+  terrain.trackWidth = $("track-select").value;
+  terrain.stage = $("stage-select").value;
   terrain.load(analysis, maxVoices);
   await score.load(analysis);
   // 자동맞춤된 줌을 슬라이더에 반영

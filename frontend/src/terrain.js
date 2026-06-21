@@ -12,6 +12,11 @@ const LANE_GAP = 8;
 const CUBE = 1.0;
 const LANE_THICK = 2.4; // 지형 z 두께
 
+// ③ 디오라마 무대화 (Phase B): 곡을 정사각 "섬"으로 나눠 스네이크(boustrophedon) 배치.
+const DIO_CELL = 60;          // 섬 한 변(월드 단위) = 한 구간의 진행 거리
+const DIO_GAP = 18;           // 섬 사이 간격
+const DIO_SEG_DUR = DIO_CELL / X_PER_SEC; // 구간 길이(초): cell 폭에 정확히 맞춤(=10s)
+
 export class Terrain {
   constructor(stageId) {
     this.stage = document.getElementById(stageId);
@@ -25,7 +30,8 @@ export class Terrain {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.stage.appendChild(this.renderer.domElement);
 
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    this.ambient = new THREE.AmbientLight(0xffffff, 0.5);
+    this.scene.add(this.ambient);
     const dir = new THREE.DirectionalLight(0xffffff, 0.7);
     dir.position.set(20, 50, 30);
     this.scene.add(dir);
@@ -44,6 +50,18 @@ export class Terrain {
     this.pitchMin = 60; this.pitchMax = 72; this.duration = 0;
     this.cameraMode = "overhead";
     this.beatBoost = 0;
+
+    // 레퍼런스 "느낌" 토글 (ADR 0011, Phase A). 기본값 = 기존.
+    this.terrainShape = "smooth"; // smooth | stepped
+    this.renderStyle = "glow";    // glow | matte
+    this.trackWidth = "wide";     // wide | narrow
+    this.stage = "scroll";        // scroll | diorama
+    this.diorama = null;          // 레이아웃 메타(load 시 계산)
+    this._lastAnalysis = null;
+    this._lastMaxVoices = 0;
+
+    this.stageGroup = new THREE.Group(); // 디오라마 섬 플레이트 + 연결로
+    this.scene.add(this.stageGroup);
 
     this._resize = this._resize.bind(this);
     window.addEventListener("resize", this._resize);
@@ -132,6 +150,138 @@ export class Terrain {
   setCameraSide(side) { this.cameraSide = side; } // 'right'(앞) | 'left'(뒤)
   setBeatMode(mode) { this.beatMode = mode; }
 
+  // ---------- 레퍼런스 느낌 토글 (Phase A) ----------
+  _laneThick() { return this.trackWidth === "narrow" ? 1.0 : LANE_THICK; }
+  _terrainOpacity(isRhythm) {
+    if (this.trackWidth === "narrow") return 1.0;
+    return isRhythm ? 0.45 : 0.9;
+  }
+  _rebuild() {
+    if (this._lastAnalysis) this.load(this._lastAnalysis, this._lastMaxVoices);
+  }
+  // ①④ 지오메트리에 박힌 토글 → 재빌드
+  setTerrainShape(v) { this.terrainShape = v; this._rebuild(); }
+  setTrackWidth(v) { this.trackWidth = v; this._rebuild(); }
+  // ② 머티리얼/배경/블룸만 → 재빌드 없이 즉시 적용
+  setRenderStyle(v) { this.renderStyle = v; this.applyRenderStyle(); }
+  // ③ 디오라마: 지오메트리/레이아웃 박힘 → 재빌드
+  setStage(v) { this.stage = v; this._rebuild(); }
+
+  // ---------- ③ 디오라마 레이아웃 ----------
+  _computeDiorama() {
+    const segDur = DIO_SEG_DUR;
+    const nSegs = Math.max(1, Math.ceil((this.duration || segDur) / segDur));
+    const cols = Math.max(1, Math.ceil(Math.sqrt(nSegs)));
+    this.diorama = { segDur, nSegs, cols, cell: DIO_CELL, pitch: DIO_CELL + DIO_GAP, pitchZ: DIO_CELL + DIO_GAP };
+  }
+
+  // 구간 s의 셀 좌하단 기준점(스네이크: 홀수 행은 좌우 반전)
+  _cellBase(s) {
+    const L = this.diorama;
+    const row = Math.floor(s / L.cols);
+    let col = s % L.cols;
+    if (row % 2 === 1) col = L.cols - 1 - col;
+    return { baseX: col * L.pitch, baseZ: row * L.pitchZ, row, reversed: row % 2 === 1 };
+  }
+
+  // 1D 시간축(초) + 레인 z → 접힌 월드 좌표. y는 불변.
+  _worldXZ(timeSec, laneZ) {
+    const L = this.diorama;
+    const s = Math.min(Math.max(0, Math.floor(timeSec / L.segDur)), L.nSegs - 1);
+    const { baseX, baseZ, reversed } = this._cellBase(s);
+    const localX = (timeSec - s * L.segDur) * X_PER_SEC; // 0..cell
+    const wx = reversed ? baseX + (L.cell - localX) : baseX + localX;
+    return { wx, wz: baseZ + laneZ, s };
+  }
+
+  // 구간 경계 점(진행 방향 진입/탈출 모서리)
+  _edgePoint(s, atEnd) {
+    const L = this.diorama;
+    const { baseX, baseZ, reversed } = this._cellBase(s);
+    const localX = atEnd ? L.cell : 0;
+    const wx = reversed ? baseX + (L.cell - localX) : baseX + localX;
+    return { x: wx, z: baseZ };
+  }
+
+  _buildDioramaStage() {
+    // 기존 무대 오브젝트 제거
+    while (this.stageGroup.children.length) {
+      const c = this.stageGroup.children.pop();
+      c.geometry && c.geometry.dispose();
+      c.material && c.material.dispose();
+      this.stageGroup.remove(c);
+    }
+    if (this.stage !== "diorama" || !this.diorama) return;
+    const L = this.diorama;
+    const matte = this.renderStyle === "matte";
+    const laneSpan = Math.max(LANE_GAP, (this._laneCount - 1) * LANE_GAP);
+    const plateMat = new THREE.MeshStandardMaterial({
+      color: matte ? 0xcfcfcf : 0x141a2c, roughness: matte ? 0.95 : 0.6,
+      metalness: matte ? 0.0 : 0.2,
+    });
+    const pathMat = new THREE.MeshStandardMaterial({
+      color: matte ? 0xe6e6e6 : 0x2a3450, roughness: matte ? 0.95 : 0.5, metalness: 0.0,
+    });
+    // 섬 플레이트
+    for (let s = 0; s < L.nSegs; s++) {
+      const { baseX, baseZ } = this._cellBase(s);
+      const depth = laneSpan + LANE_GAP;
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(L.cell + 4, 1.2, depth), plateMat);
+      plate.position.set(baseX + L.cell / 2, -0.8, baseZ - laneSpan / 2);
+      this.stageGroup.add(plate);
+    }
+    // 섬 사이 연결로
+    for (let s = 0; s + 1 < L.nSegs; s++) {
+      const a = this._edgePoint(s, true), b = this._edgePoint(s + 1, false);
+      const dx = b.x - a.x, dz = b.z - a.z;
+      const len = Math.hypot(dx, dz) || 1;
+      const path = new THREE.Mesh(
+        new THREE.BoxGeometry(len + 2, 0.8, LANE_THICK * 2.2), pathMat
+      );
+      path.position.set((a.x + b.x) / 2, -0.6, (a.z + b.z) / 2);
+      path.rotation.y = -Math.atan2(dz, dx);
+      this.stageGroup.add(path);
+    }
+  }
+
+  applyRenderStyle() {
+    const matte = this.renderStyle === "matte";
+    // 블룸: matte면 0 (update 루프도 style 가드)
+    this.bloom.strength = matte ? 0 : 0.9;
+    // 배경/조명
+    if (matte) {
+      // 중립 밝은 회색 무대 + ambient 강화
+      this.scene.background = new THREE.Color(0x9a9a9a);
+      this.scene.fog = new THREE.Fog(0x9a9a9a, 120, 480);
+      while (this.bgGroup.children.length) {
+        const c = this.bgGroup.children.pop();
+        c.geometry && c.geometry.dispose();
+        this.bgGroup.remove(c);
+      }
+    } else {
+      this.scene.fog = new THREE.Fog(0x05060a, 80, 320);
+      this.setBackgroundMode(this.bgMode); // glow 복귀 시 현재 배경 재적용
+    }
+    if (this.ambient) this.ambient.intensity = matte ? 0.95 : 0.5;
+    // 머티리얼: 지형/큐브 발광 제거 + 무광
+    for (const v of this.voices) {
+      const tmat = v.terrain && v.terrain.material;
+      if (tmat) {
+        tmat.emissive.copy(matte ? new THREE.Color(0x000000) : new THREE.Color(v.color).multiplyScalar(0.25));
+        tmat.roughness = matte ? 0.95 : 0.4;
+        tmat.metalness = matte ? 0.0 : 0.2;
+        tmat.needsUpdate = true;
+      }
+      if (v.mat) {
+        v.mat.emissive.copy(matte ? new THREE.Color(0x111111) : new THREE.Color(v.color).multiplyScalar(0.4));
+        v.mat.roughness = matte ? 0.85 : 0.25;
+        v.mat.metalness = matte ? 0.0 : 0.3;
+        v.mat.needsUpdate = true;
+      }
+    }
+    this._buildDioramaStage(); // ③ 섬 플레이트/연결로(렌더 스타일 색 반영)
+  }
+
   // ---------- 로드 ----------
   clear() {
     for (const v of this.voices) {
@@ -145,10 +295,13 @@ export class Terrain {
   }
 
   load(analysis, maxVoices) {
+    this._lastAnalysis = analysis;
+    this._lastMaxVoices = maxVoices;
     this.clear();
     this.pitchMin = analysis.pitchRange.min;
     this.pitchMax = analysis.pitchRange.max;
     this.duration = analysis.durationSec;
+    this._computeDiorama();
 
     // 전체 트랙(드럼 포함)에서 중요도 상위 maxVoices개 선택
     const selected = analysis.parts
@@ -160,6 +313,7 @@ export class Terrain {
     selected.forEach((part, i) => this._buildVoice(part, i, part.isRhythm));
     this._mainVoice = this.voices.find((v) => !v.isRhythm) || this.voices[0] || null;
     this._laneCount = this.voices.length;
+    this.applyRenderStyle(); // 재빌드 후 렌더 스타일 + 디오라마 무대 재적용
   }
 
   _sampleHeights(notes, isRhythm) {
@@ -185,23 +339,52 @@ export class Terrain {
     return { xs, ys: sm };
   }
 
+  // ① 이산 블록: 음표마다 평평한 캡 + 수직 라이저로 계단형 (스무딩 없음)
+  _steppedHeights(notes, isRhythm) {
+    const xs = [], ys = [];
+    for (let i = 0; i < notes.length; i++) {
+      const n = notes[i];
+      const y = isRhythm ? 0.6 : this.yFor(n.midi);
+      const x0 = n.startSec * X_PER_SEC;
+      const x1 = (n.startSec + (n.durSec || 0.2)) * X_PER_SEC;
+      if (xs.length) { xs.push(x0); ys.push(ys[ys.length - 1]); } // 직전 높이를 음표 시작까지 유지
+      xs.push(x0); ys.push(y); // 수직 라이저
+      xs.push(x1); ys.push(y); // 평평한 캡(음길이=가로폭)
+    }
+    return { xs, ys };
+  }
+
   _buildVoice(part, laneIndex, isRhythm) {
     const laneZ = -laneIndex * LANE_GAP;
     const color = voiceColorHex(part.index);
-    const { xs, ys } = this._sampleHeights(part.notes, isRhythm);
+    const { xs, ys } = this.terrainShape === "stepped"
+      ? this._steppedHeights(part.notes, isRhythm)
+      : this._sampleHeights(part.notes, isRhythm);
 
     // 채워진 입체 지형: 상단 캡 + 전면 벽 (라인 아래를 바닥까지 채움)
-    const z0 = laneZ - LANE_THICK / 2, z1 = laneZ + LANE_THICK / 2;
+    const thick = this._laneThick();
+    const dioOn = this.stage === "diorama" && this.diorama;
     const positions = [], normals = [];
     const push = (x, y, z, nx, ny, nz) => { positions.push(x, y, z); normals.push(nx, ny, nz); };
     for (let i = 0; i + 1 < xs.length; i++) {
-      const x0 = xs[i], x1 = xs[i + 1], y0 = ys[i], y1 = ys[i + 1];
+      const y0 = ys[i], y1 = ys[i + 1];
+      // 세그먼트 좌표 → (디오라마면 접힌) 월드 좌표
+      let wx0, wx1, cz;
+      if (dioOn) {
+        const a = this._worldXZ(xs[i] / X_PER_SEC, laneZ);
+        const b = this._worldXZ(xs[i + 1] / X_PER_SEC, laneZ);
+        if (a.s !== b.s) continue; // 섬 경계에서 끊음(섬 사이로 늘어나지 않게)
+        wx0 = a.wx; wx1 = b.wx; cz = a.wz;
+      } else {
+        wx0 = xs[i]; wx1 = xs[i + 1]; cz = laneZ;
+      }
+      const z0 = cz - thick / 2, z1 = cz + thick / 2;
       // 상단 캡 (위 방향)
-      push(x0, y0, z0, 0, 1, 0); push(x0, y0, z1, 0, 1, 0); push(x1, y1, z1, 0, 1, 0);
-      push(x0, y0, z0, 0, 1, 0); push(x1, y1, z1, 0, 1, 0); push(x1, y1, z0, 0, 1, 0);
+      push(wx0, y0, z0, 0, 1, 0); push(wx0, y0, z1, 0, 1, 0); push(wx1, y1, z1, 0, 1, 0);
+      push(wx0, y0, z0, 0, 1, 0); push(wx1, y1, z1, 0, 1, 0); push(wx1, y1, z0, 0, 1, 0);
       // 전면 벽 (카메라쪽 z1)
-      push(x0, y0, z1, 0, 0, 1); push(x0, 0, z1, 0, 0, 1); push(x1, 0, z1, 0, 0, 1);
-      push(x0, y0, z1, 0, 0, 1); push(x1, 0, z1, 0, 0, 1); push(x1, y1, z1, 0, 0, 1);
+      push(wx0, y0, z1, 0, 0, 1); push(wx0, 0, z1, 0, 0, 1); push(wx1, 0, z1, 0, 0, 1);
+      push(wx0, y0, z1, 0, 0, 1); push(wx1, 0, z1, 0, 0, 1); push(wx1, y1, z1, 0, 0, 1);
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
@@ -209,7 +392,7 @@ export class Terrain {
     const mat = new THREE.MeshStandardMaterial({
       color, emissive: new THREE.Color(color).multiplyScalar(0.25),
       roughness: 0.4, metalness: 0.2, transparent: true,
-      opacity: isRhythm ? 0.45 : 0.9, side: THREE.DoubleSide,
+      opacity: this._terrainOpacity(isRhythm), side: THREE.DoubleSide,
     });
     const terrain = new THREE.Mesh(geo, mat);
     this.scene.add(terrain);
@@ -241,9 +424,10 @@ export class Terrain {
           const hi = this.yFor(Math.max(...n.chordMidis));
           const h = Math.max(0.4, hi - lo);
           const w = Math.max(0.4, (n.durSec || 0.2) * X_PER_SEC);
-          const x = n.startSec * X_PER_SEC + w / 2;
-          m.compose(new THREE.Vector3(x, (lo + hi) / 2, laneZ), q,
-            new THREE.Vector3(w * 0.9, h, LANE_THICK * 0.7));
+          const tMid = n.startSec + (n.durSec || 0.2) / 2;
+          const p = dioOn ? this._worldXZ(tMid, laneZ) : { wx: n.startSec * X_PER_SEC + w / 2, wz: laneZ };
+          m.compose(new THREE.Vector3(p.wx, (lo + hi) / 2, p.wz), q,
+            new THREE.Vector3(w * 0.9, h, thick * 0.7));
           pillars.setMatrixAt(i, m);
         });
         pillars.instanceMatrix.needsUpdate = true;
@@ -275,11 +459,11 @@ export class Terrain {
   pulse() { this.beatBoost = 1; }
 
   _spawnParticles(v) {
-    const { x, y } = v.cube.position;
+    const { x, y, z } = v.cube.position;
     const geo = new THREE.SphereGeometry(0.14, 6, 6);
     for (let i = 0; i < 7; i++) {
       const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: v.color }));
-      m.position.set(x, y, v.laneZ);
+      m.position.set(x, y, z);
       const vel = new THREE.Vector3((Math.random() - 0.5) * 5, Math.random() * 6 + 2, (Math.random() - 0.5) * 5);
       this.scene.add(m);
       this.particles.push({ mesh: m, vel, life: 1 });
@@ -287,14 +471,15 @@ export class Terrain {
   }
 
   update(position, dt) {
+    const dioOn = this.stage === "diorama" && this.diorama;
     for (const v of this.voices) {
-      const x = position * X_PER_SEC;
       const midi = this._pitchAt(v.notes, position);
       const y = v.isRhythm ? 0.6 : (midi != null ? this.yFor(midi) : 0);
-      v.cube.position.set(x, y + CUBE / 2, v.laneZ);
+      const p = dioOn ? this._worldXZ(position, v.laneZ) : { wx: position * X_PER_SEC, wz: v.laneZ };
+      v.cube.position.set(p.wx, y + CUBE / 2, p.wz);
       if (v.flash > 0) {
         v.flash = Math.max(0, v.flash - dt * 3);
-        v.mat.emissive.setScalar(0.4 + v.flash * 0.6);
+        v.mat.emissive.setScalar(this.renderStyle === "matte" ? v.flash * 0.15 : 0.4 + v.flash * 0.6);
         v.cube.scale.setScalar(1 + v.flash * 0.7);
       }
     }
@@ -311,13 +496,24 @@ export class Terrain {
 
     // 비트 반응 → 블룸 부스트
     if (this.beatBoost > 0) this.beatBoost = Math.max(0, this.beatBoost - dt * 2.5);
-    this.bloom.strength = 0.9 + this.beatBoost * 0.9;
+    this.bloom.strength = this.renderStyle === "matte" ? 0 : 0.9 + this.beatBoost * 0.9;
 
     this._updateCamera(position);
     this.composer.render();
   }
 
   _updateCamera(position) {
+    // ③ 디오라마: 아이소메트릭 부감으로 현재 섬을 따라간다
+    if (this.stage === "diorama" && this.diorama) {
+      const w = this._mainVoice
+        ? this._worldXZ(position, this._mainVoice.laneZ)
+        : this._worldXZ(position, 0);
+      const desired = new THREE.Vector3(w.wx - 34, 72, w.wz + 52);
+      const look = new THREE.Vector3(w.wx + 4, 2, w.wz - 6);
+      this.camera.position.lerp(desired, 0.05);
+      this.camera.lookAt(look);
+      return;
+    }
     const x = position * X_PER_SEC;
     const main = this._mainVoice ? this._mainVoice.cube.position : new THREE.Vector3(x, 5, 0);
     const midZ = -((this._laneCount - 1) * LANE_GAP) / 2;

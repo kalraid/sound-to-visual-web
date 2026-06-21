@@ -76,6 +76,30 @@
             <option value="none">없음</option>
           </select>
         </label>
+        <label>지형
+          <select id="shape-select">
+            <option value="smooth" selected>능선(기존)</option>
+            <option value="stepped">블록</option>
+          </select>
+        </label>
+        <label>렌더
+          <select id="style-select">
+            <option value="glow" selected>발광(기존)</option>
+            <option value="matte">무광</option>
+          </select>
+        </label>
+        <label>트랙
+          <select id="track-select">
+            <option value="wide" selected>넓게(기존)</option>
+            <option value="narrow">좁게</option>
+          </select>
+        </label>
+        <label>무대
+          <select id="stage-select">
+            <option value="scroll" selected>스크롤(기존)</option>
+            <option value="diorama">디오라마</option>
+          </select>
+        </label>
         <label>악보크기 <span id="score-zoom-val">1.1</span>
           <input id="score-zoom" type="range" min="0.3" max="2.0" step="0.1" value="1.1" />
         </label>
