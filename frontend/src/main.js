@@ -1,13 +1,19 @@
 // 오케스트레이션: 업로드 → /analyze → 악보+지형+오디오 로드 → 단일 루프로 동기.
 import { AudioEngine } from "./audio.js";
 import { ScorePanel } from "./score.js";
+import { PianoRollPanel } from "./pianoroll.js";
 import { Terrain } from "./terrain.js";
 
 const $ = (id) => document.getElementById(id);
 
 const audio = new AudioEngine();
 const score = new ScorePanel("osmd", "score-panel");
+const pianoroll = new PianoRollPanel("pianoroll", "score-panel");
 const terrain = new Terrain("stage");
+
+// 악보 패널 선택형(C3): osmd | pianoroll. 둘 다 로드해 두고 표시만 토글.
+let scoreMode = "osmd";
+const activeScore = () => (scoreMode === "pianoroll" ? pianoroll : score);
 
 let analysis = null;
 let maxVoices = 4;
@@ -39,7 +45,7 @@ $("seek").addEventListener("input", (e) => {
   if (!analysis) return;
   const sec = (e.target.value / 1000) * audio.duration;
   audio.seek(sec);
-  score.update(sec);
+  activeScore().update(sec);
 });
 
 $("rate-select").addEventListener("change", (e) => audio.setRate(parseFloat(e.target.value)));
@@ -58,11 +64,22 @@ $("shape-select").addEventListener("change", (e) => terrain.setTerrainShape(e.ta
 $("style-select").addEventListener("change", (e) => terrain.setRenderStyle(e.target.value));
 $("track-select").addEventListener("change", (e) => terrain.setTrackWidth(e.target.value));
 $("stage-select").addEventListener("change", (e) => terrain.setStage(e.target.value));
+$("score-select").addEventListener("change", (e) => {
+  scoreMode = e.target.value;
+  const usePiano = scoreMode === "pianoroll";
+  $("osmd").style.display = usePiano ? "none" : "";
+  $("pianoroll").style.display = usePiano ? "block" : "none";
+  // 현재 패널 줌 슬라이더 동기화 + 현재 위치로 갱신
+  const z = activeScore().zoom;
+  $("score-zoom").value = z;
+  $("score-zoom-val").textContent = z;
+  activeScore().update(prevPos);
+});
 let zoomTimer = null;
 $("score-zoom").addEventListener("input", (e) => {
   $("score-zoom-val").textContent = e.target.value;
   clearTimeout(zoomTimer); // 디바운스: 드래그 끝난 뒤 한 번만 재렌더(끊김 방지)
-  zoomTimer = setTimeout(() => score.setZoom(parseFloat(e.target.value)), 180);
+  zoomTimer = setTimeout(() => activeScore().setZoom(parseFloat(e.target.value)), 180);
 });
 
 // --- 업로드 & 로드 ---
@@ -101,8 +118,9 @@ async function uploadFile(file) {
   terrain.stageMode = $("stage-select").value;
   terrain.load(analysis, maxVoices);
   await score.load(analysis);
-  // 자동맞춤된 줌을 슬라이더에 반영
-  const z = score.zoom.toFixed(1);
+  await pianoroll.load(analysis);
+  // 활성 패널의 줌을 슬라이더에 반영
+  const z = activeScore().zoom.toFixed(1);
   $("score-zoom").value = z;
   $("score-zoom-val").textContent = z;
   audio.load(analysis);
@@ -148,7 +166,7 @@ function loop() {
       maybePulse(hits);
     }
     terrain.update(pos, dt);
-    score.update(pos);
+    activeScore().update(pos);
     $("seek").value = audio.duration ? Math.round((pos / audio.duration) * 1000) : 0;
     $("time").textContent = `${fmt(pos)} / ${fmt(audio.duration)}`;
     if (!audio.playing && pos >= audio.duration && audio.duration > 0) {

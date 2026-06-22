@@ -171,5 +171,10 @@ def analyze_score(path: str) -> dict:
         "_intervalSequences": [
             _interval_sequence(e["notes"]) for e in extracted if not e["isRhythm"]
         ],
+        # 위 interval 시퀀스 각각이 어느 성부(parts 내 인덱스 위치)인지 매핑.
+        # 캐논 모방 lag를 성부쌍으로 환산할 때 필요(ADR 0012 / C1).
+        "_intervalSeqPartIndex": [
+            idx for idx, e in enumerate(extracted) if not e["isRhythm"]
+        ],
         "musicxml": musicxml,
     }

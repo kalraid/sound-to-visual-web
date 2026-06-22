@@ -57,12 +57,21 @@
 > 착수 전 `docs/adr/0012-canon-emphasis-same-engine.md` + `backend/classifier.py`(또는 분석 모듈) 확인.
 
 **권장 순서 (작은 것부터, 동일 엔진 원칙 유지)**
-- [ ] **C1. 백엔드 — 모방 lag 노출**: 성부쌍 모방 지연(lag)을 분석 JSON에 추가
-      (현 분류기의 lag 유사도 재활용). 캐논일 때만 의미. 프론트가 읽을 필드명 합의.
+- [x] **C1. 백엔드 — 모방 lag 노출** ✅ (2026-06-22): `classifier.canon_detail()` 추가 →
+      분석 JSON 최상위에 `canon: {detected, confidence, pairs[]}` 노출.
+      pair = `{leader, follower(=parts 인덱스), lagNotes, lagSec, similarity}`.
+      `_similarity`가 (ratio, lag) 반환하도록 변경, `_intervalSeqPartIndex`로 seq→성부 매핑.
+      `_lag_seconds`로 lag(음표수)→초 환산(중앙값, 템포변화 견고). `app._build_result`가 부착.
+      `classify(analysis, canon=None)`로 시그니처 확장(기존 단일인자 테스트 호환). 백엔드 4 테스트 통과.
+      ⚠️ lagNotes=0이어도 lagSec은 절대초 차이를 잡음(canon 샘플: lagNotes 0 / lagSec 1.0). C2가 이걸 씀.
 - [ ] **C2. 시차 추격(프론트)**: 캐논 분류 시, 같은 구조 위에서 마커 출발/주행을 lag만큼
       시차 정렬. 비캐논은 강조 레이어만 off(엔진 분기 금지 — ADR 0012). `terrain.js` 마커 로직.
-- [ ] **C3. 악보 패널 선택형**: OSMD(오선보) | 2D 컬러 피아노롤(영상2 스타일) 토글. `score.js` 확장
-      + `index.html` score-select. (C1/C2와 독립적이라 먼저 해도 됨)
+      → **C1 완료로 데이터 준비됨**: `analysis.canon.pairs[].lagSec` 사용.
+- [x] **C3. 악보 패널 선택형** ✅ (2026-06-22): 신규 `frontend/src/pianoroll.js`(`PianoRollPanel`,
+      ScorePanel과 동일 인터페이스 load/update/reset/setZoom/zoom). x=시간/y=음높이/색=성부색,
+      playhead 좌측 25% 고정, 현재 음 강조 테두리, 옥타브 그리드, ResizeObserver+dpr.
+      `index.html` score-select(osmd|pianoroll) + canvas 추가, `main.js`는 `activeScore()`로 라우팅
+      (둘 다 로드, 표시만 토글). 브라우저 검증 완료(2D 캔버스라 스크린샷 유효 — 캐논 시차 육안 확인).
 - [ ] **C4. 거울 대칭(가능 시)**: 역행/전위 감지 → 흰 구조 + 검은 거울상 보조 표시(영상2 핵심).
       감지가 어려우면 후순위.
 - [ ] **C5. 분류 오판 보정**: 캐논곡이 "화음"으로 분류되는 문제 — `classifier.py`/ADR 0005 개정.
