@@ -46,7 +46,13 @@
       <div id="toolbar">
         <button id="open-btn">파일 열기 (.mid/.musicxml)</button>
         <input id="file-input" type="file" accept=".mid,.midi,.xml,.musicxml,.mxl" hidden />
-        <span>분류:</span><span id="category">-</span>
+        <span>분류:</span>
+        <select id="category-select" title="자동 분류 결과 — 오판 시 수동 변경(ADR 0005)">
+          <option value="canon">캐논</option>
+          <option value="harmonic">화음</option>
+          <option value="other">기타</option>
+        </select>
+        <span id="category-conf">-</span>
         <label>최대 성부 <span id="voice-count">4</span>
           <input id="voice-slider" type="range" min="1" max="8" value="4" />
         </label>
@@ -104,6 +110,12 @@
         <label>추격강조
           <select id="canon-select">
             <option value="on" selected>켜기(캐논)</option>
+            <option value="off">끄기</option>
+          </select>
+        </label>
+        <label>거울대칭
+          <select id="mirror-select">
+            <option value="on" selected>켜기(역행/전위)</option>
             <option value="off">끄기</option>
           </select>
         </label>

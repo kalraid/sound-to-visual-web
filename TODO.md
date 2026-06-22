@@ -52,9 +52,9 @@
 - [ ] (개선 여지, 선택) 진짜 오쏘 아이소 카메라, 섬-호핑 트랜지션, 마디/프레이즈 기반 분할,
       그리드 바닥 확장(현재 4000×400라 먼 섬이 바닥 밖으로 뜸), 디오라마에서 matte+밝은 배경 기본화 검토.
 
-## Phase C — 캐논 강조(ADR 0012) + 피아노롤  ⬅ 다음 세션 시작점
-> Phase A(①②④)·Phase B(③ 디오라마 1차) 완료·검증됨. 다음은 ADR 0012 캐논 강조와 피아노롤.
-> 착수 전 `docs/adr/0012-canon-emphasis-same-engine.md` + `backend/classifier.py`(또는 분석 모듈) 확인.
+## Phase C — 캐논 강조(ADR 0012) + 피아노롤  ✅ (C1~C5 완료, 2026-06-22)
+> Phase A(①②④)·Phase B(③ 디오라마 1차) 완료·검증됨. Phase C(C1~C5) 모두 구현·검증 완료.
+> 참고: `docs/adr/0012-canon-emphasis-same-engine.md`, `docs/adr/0005-classification.md`, `backend/classifier.py`.
 
 **권장 순서 (작은 것부터, 동일 엔진 원칙 유지)**
 - [x] **C1. 백엔드 — 모방 lag 노출** ✅ (2026-06-22): `classifier.canon_detail()` 추가 →
@@ -77,9 +77,18 @@
       playhead 좌측 25% 고정, 현재 음 강조 테두리, 옥타브 그리드, ResizeObserver+dpr.
       `index.html` score-select(osmd|pianoroll) + canvas 추가, `main.js`는 `activeScore()`로 라우팅
       (둘 다 로드, 표시만 토글). 브라우저 검증 완료(2D 캔버스라 스크린샷 유효 — 캐논 시차 육안 확인).
-- [ ] **C4. 거울 대칭(가능 시)**: 역행/전위 감지 → 흰 구조 + 검은 거울상 보조 표시(영상2 핵심).
-      감지가 어려우면 후순위.
-- [ ] **C5. 분류 오판 보정**: 캐논곡이 "화음"으로 분류되는 문제 — `classifier.py`/ADR 0005 개정.
+- [x] **C4. 거울 대칭** ✅ (2026-06-22): 백엔드 `classifier.mirror_detail()` — 역행/전위/역행전위
+      감지(음정열 변환 비교, 임계 0.7로 보수적). `analysis.mirror{detected,confidence,pairs[{base,mirror,type,similarity}]}` 노출.
+      프론트 `terrain._buildMirror()` — 베이스 성부 지형을 기하 반사한 검은 고스트(opacity 0.38)를
+      mirror 성부 레인에 보조 표시. inversion=음높이축(scale.y=-1, y=Y_HEIGHT), retrograde=시간축
+      (scale.x=-1, x=2·xc). 접힌 좌표 문제로 **scroll 모드 전용**. 토글 `mirror-select`(기본 on).
+      **검증**: 백엔드 샘플에서 거짓양성 없음(canon/melody/bwv66 모두 <0.7). 프론트는 합성 mirror쌍
+      주입으로 inversion(sy=-1,py=10,pz=레인이동)·retrograde(sx=-1,px=duration·6)·diorama 게이팅·off
+      모두 수치 확인. (실제 거울곡 샘플은 없어 백엔드 감지는 합성 검증.)
+- [x] **C5. 분류 오판 보정** ✅ (2026-06-22): 토널 응답 1반음 허용 일치 + 시간지연 게이트(lagSec≥0.3)로
+      캐논곡→"화음" 오분류 보완(`_similarity(tol)`, canon_detail kind="tonal"). `classify`는 canon.detected
+      1차 기준. 프론트 `category-select` 수동 변경 드롭다운 구현(ADR 0005 약속) — 캐논↔비캐논 전환 시
+      추격강조 연동. ADR 0005 개정. 회귀 테스트 4종 통과(melody/canon/bwv66 라벨 유지).
 
 ## 시작 방법 (로컬 기동)
 - `./start.sh`(루트) → 백엔드 :8000 + 프론트 :5173, 로그는 `backend.log`/`frontend.log`. 종료 `./stop.sh`.

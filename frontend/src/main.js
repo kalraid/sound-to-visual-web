@@ -66,6 +66,7 @@ $("style-select").addEventListener("change", (e) => terrain.setRenderStyle(e.tar
 $("track-select").addEventListener("change", (e) => terrain.setTrackWidth(e.target.value));
 $("stage-select").addEventListener("change", (e) => terrain.setStage(e.target.value));
 $("canon-select").addEventListener("change", (e) => terrain.setCanonEmphasis(e.target.value === "on"));
+$("mirror-select").addEventListener("change", (e) => terrain.setMirrorEmphasis(e.target.value === "on"));
 $("score-select").addEventListener("change", (e) => {
   scoreMode = e.target.value;
   const usePiano = scoreMode === "pianoroll";
@@ -119,6 +120,7 @@ async function uploadFile(file) {
   terrain.trackWidth = $("track-select").value;
   terrain.stageMode = $("stage-select").value;
   terrain.canonEmphasis = $("canon-select").value === "on";
+  terrain.mirrorEmphasis = $("mirror-select").value === "on";
   terrain.load(analysis, maxVoices);
   await score.load(analysis);
   await pianoroll.load(analysis);
@@ -133,8 +135,18 @@ async function uploadFile(file) {
 }
 
 function showCategory(cat) {
-  $("category").textContent = `${cat.label} (${Math.round(cat.confidence * 100)}%)`;
+  $("category-select").value = cat.labelEn;
+  $("category-conf").textContent = `(${Math.round(cat.confidence * 100)}%)`;
 }
+
+// C5: 분류 오판 수동 보정(ADR 0005). 라벨을 캐논으로 바꾸면 추격 강조를 켜고,
+// 비캐논으로 바꾸면 끈다(자동 감지 결과를 사용자가 덮어쓴다).
+$("category-select").addEventListener("change", (e) => {
+  const isCanon = e.target.value === "canon";
+  $("canon-select").value = isCanon ? "on" : "off";
+  terrain.setCanonEmphasis(isCanon);
+  $("category-conf").textContent = "(수동)";
+});
 
 // 비트 반응 (ADR 0009): 선택 모드에 따라 장면 펄스
 function maybePulse(hits) {

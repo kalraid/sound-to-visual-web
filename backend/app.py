@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from analyzer import analyze_score
-from classifier import canon_detail, classify
+from classifier import canon_detail, classify, mirror_detail
 
 ALLOWED = {".mid", ".midi", ".xml", ".musicxml", ".mxl"}
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache")
@@ -31,11 +31,13 @@ app.add_middleware(
 
 def _build_result(path: str) -> dict:
     analysis = analyze_score(path)
-    canon = canon_detail(analysis)  # 성부쌍 모방 lag (ADR 0012 / C1)
+    canon = canon_detail(analysis)    # 성부쌍 모방 lag (ADR 0012 / C1)
+    mirror = mirror_detail(analysis)  # 역행/전위 거울 대칭 (C4)
     category = classify(analysis, canon)
     analysis.pop("_intervalSequences", None)  # 내부 전용
     analysis.pop("_intervalSeqPartIndex", None)
     analysis["canon"] = canon
+    analysis["mirror"] = mirror
     analysis["category"] = category
     return analysis
 

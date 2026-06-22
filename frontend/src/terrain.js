@@ -60,11 +60,16 @@ export class Terrain {
     // 캐논 강조 — 시차 추격 (ADR 0012 / C2). 캐논 분류 시에만 동작하는 가산 레이어.
     this.canonEmphasis = true;    // grill 확정: 기본 켜짐. 비캐논이면 자동 무효.
     this.canon = null;            // analysis.canon (load 시 보관)
+    // 거울 대칭 강조 — 역행/전위 (C4). 검은 거울상 구조를 보조 표시. scroll 모드에서만.
+    this.mirrorEmphasis = true;
+    this.mirror = null;           // analysis.mirror (load 시 보관)
     this._lastAnalysis = null;
     this._lastMaxVoices = 0;
 
     this.stageGroup = new THREE.Group(); // 디오라마 섬 플레이트 + 연결로
     this.scene.add(this.stageGroup);
+    this.mirrorGroup = new THREE.Group(); // C4 거울상 고스트 지형
+    this.scene.add(this.mirrorGroup);
 
     this._resize = this._resize.bind(this);
     window.addEventListener("resize", this._resize);
@@ -177,6 +182,8 @@ export class Terrain {
   setStage(v) { this.stageMode = v; this._rebuild(); }
   // C2 시차 추격: 마커 위치만 바꾸므로 재빌드 불필요(update가 매 프레임 읽음).
   setCanonEmphasis(on) { this.canonEmphasis = on; }
+  // C4 거울 대칭: 고스트 지형 재구성.
+  setMirrorEmphasis(on) { this.mirrorEmphasis = on; this._buildMirror(); }
 
   // ---------- ③ 디오라마 레이아웃 ----------
   _computeDiorama() {
@@ -327,8 +334,42 @@ export class Terrain {
     this._mainVoice = this.voices.find((v) => !v.isRhythm) || this.voices[0] || null;
     this._laneCount = this.voices.length;
     this.canon = analysis.canon || null;
+    this.mirror = analysis.mirror || null;
     this._buildChaseMap();
     this.applyRenderStyle(); // 재빌드 후 렌더 스타일 + 디오라마 무대 재적용
+    this._buildMirror();     // C4 거울상 고스트(applyRenderStyle 뒤: 베이스 지형 머티리얼 확정 후)
+  }
+
+  // C4: 역행/전위로 감지된 거울 대칭쌍 → 베이스 성부 지형을 기하 반사한 '검은 거울상'을
+  // mirror 성부 레인 위에 보조 표시(영상2 핵심). 접힌 좌표가 깨지므로 scroll 모드에서만.
+  _buildMirror() {
+    while (this.mirrorGroup.children.length) {
+      const c = this.mirrorGroup.children.pop();
+      c.material && c.material.dispose();
+      this.mirrorGroup.remove(c);
+    }
+    const m = this.mirror;
+    if (!this.mirrorEmphasis || !m || !m.detected || this.stageMode === "diorama") return;
+    const byPart = (pi) => this.voices.find((v) => v.partIndex === pi);
+    const xc = (this.duration * X_PER_SEC) / 2; // 시간축 중심(역행 반사축)
+    for (const pr of m.pairs) {
+      const base = byPart(pr.base), mir = byPart(pr.mirror);
+      if (!base || !mir || !base.terrain) continue;
+      const ghost = new THREE.Mesh(
+        base.terrain.geometry, // 지오메트리 공유(읽기 전용) — 변환은 transform으로
+        new THREE.MeshStandardMaterial({
+          color: 0x111111, transparent: true, opacity: 0.38,
+          roughness: 1.0, metalness: 0.0, side: THREE.DoubleSide, depthWrite: false,
+        })
+      );
+      const inv = pr.type === "inversion" || pr.type === "retrograde-inversion";
+      const retro = pr.type === "retrograde" || pr.type === "retrograde-inversion";
+      if (inv) { ghost.scale.y = -1; ghost.position.y = Y_HEIGHT; } // 음높이축 반사
+      if (retro) { ghost.scale.x = -1; ghost.position.x = 2 * xc; } // 시간축 반사
+      ghost.position.z += mir.laneZ - base.laneZ; // mirror 성부 레인으로 이동
+      ghost.userData.mirrorOf = pr;
+      this.mirrorGroup.add(ghost);
+    }
   }
 
   // C2: 각 성부가 어떤 캐논쌍의 '후행'인지 → 선행 성부 트랙 위에서 lagSec 만큼 뒤를

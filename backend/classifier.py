@@ -1,11 +1,14 @@
-"""캐논 / 화음 / 기타 분류 (ADR 0005) + 캐논 모방 lag 노출 (ADR 0012 / C1).
+"""캐논 / 화음 / 기타 분류 (ADR 0005) + 캐논 모방 lag (C1) + 거울 대칭 (C4).
 
 - 기타: 단성(성부 1개 또는 동시 발음 거의 없음)
 - 화음: 다성
 - 캐논: 성부 간 음정 간격열의 시간지연 자기유사성(이조 허용)
 
-`canon_detail`은 분류와 별개로, 성부쌍의 모방 지연(lag)을 분석 JSON에 노출한다.
-프론트(C2 시차 추격)가 같은 트랙 위에서 마커를 lag만큼 시차 정렬하는 데 쓴다.
+`canon_detail`: 성부쌍 모방 지연(lag) 노출 → 프론트 C2 시차 추격.
+`mirror_detail`: 역행/전위(거울 대칭) 관계 노출 → 프론트 C4 거울상.
+
+C5 보정: 토널 응답(조성 답句, 음정이 1반음 차로 변형)을 정확 일치만으로는 놓쳐
+캐논곡이 '화음'으로 오분류되던 문제 → 1반음 허용(tonal) 일치 + 시간지연 게이트로 보완.
 """
 from __future__ import annotations
 
@@ -13,14 +16,17 @@ from __future__ import annotations
 _MIN_LEN = 6
 _MIN_OVERLAP_FLOOR = 8
 _MAX_LAG = 64
+_TONAL_TOL = 1            # 토널 응답 허용 오차(반음)
+_TONAL_MIN_RATIO = 0.78   # 토널 일치로 캐논 인정할 최소 비율
+_TONAL_MIN_LAGSEC = 0.3   # 토널 캐논은 실제 시간지연이 있어야(화음 동시발음과 구분)
 
 
-def _similarity(a, b):
+def _similarity(a, b, tol: int = 0):
     """두 음정 간격열의 lag 슬라이딩 최대 일치율 (이조 불변).
 
-    a[i] == b[i+lag] 인 정렬을 찾는다 → a 가 선행(leader), b 가 lag 만큼 후행(follower).
-    반환: (best_ratio, best_lag). 의미 있는 겹침이 없으면 (0.0, 0).
-    짧은 꼬리끼리 우연히 100% 맞는 거짓양성을 막기 위해 충분히 긴 겹침만 인정한다.
+    a[i] ≈ b[i+lag] (|차| <= tol) 정렬을 찾는다 → a 선행, b 가 lag 만큼 후행.
+    반환: (best_ratio, best_lag). 짧은 꼬리끼리 우연히 맞는 거짓양성을 막기 위해
+    충분히 긴 겹침만 인정한다.
     """
     if len(a) < _MIN_LEN or len(b) < _MIN_LEN:
         return 0.0, 0
@@ -32,7 +38,7 @@ def _similarity(a, b):
         n = min(len(a), len(bb))
         if n < min_overlap:
             break
-        match = sum(1 for i in range(n) if a[i] == bb[i])
+        match = sum(1 for i in range(n) if abs(a[i] - bb[i]) <= tol)
         ratio = match / n
         if ratio > best:
             best, best_lag = ratio, lag
@@ -57,11 +63,7 @@ def _polyphony_ratio(parts) -> float:
 
 
 def _lag_seconds(leader, follower, lag_notes: int) -> float:
-    """모방 lag(음표 수)를 실제 시간차(초)로 환산.
-
-    follower 의 note[k+lag] 가 leader 의 note[k] 와 같은 소재를 연주하므로
-    그 시작초 차이의 중앙값을 lag 시간으로 본다(템포 변화에 견고하도록 median).
-    """
+    """모방 lag(음표 수)를 실제 시간차(초)로 환산(중앙값, 템포변화 견고)."""
     ln, fn = leader["notes"], follower["notes"]
     diffs = []
     for k in range(min(len(ln), len(fn) - lag_notes, 64)):
@@ -74,47 +76,90 @@ def _lag_seconds(leader, follower, lag_notes: int) -> float:
     return round(diffs[len(diffs) // 2], 3)
 
 
-def canon_detail(analysis: dict) -> dict:
-    """성부쌍 모방 관계를 분석 → {detected, confidence, pairs[]}.
-
-    각 pair: {leader, follower(=parts 인덱스), lagNotes, lagSec, similarity}.
-    similarity 내림차순. confidence = 최대 유사도.
-    """
+def _seqs_and_idx(analysis):
     seqs = analysis.get("_intervalSequences", [])
     idxs = analysis.get("_intervalSeqPartIndex", list(range(len(seqs))))
+    return seqs, idxs
+
+
+def canon_detail(analysis: dict) -> dict:
+    """성부쌍 모방 관계 → {detected, confidence, pairs[]}.
+
+    각 pair: {leader, follower(=parts 인덱스), lagNotes, lagSec, similarity, kind}.
+    kind = "exact" | "tonal". similarity 내림차순. confidence = 최대 채택 유사도.
+    """
+    seqs, idxs = _seqs_and_idx(analysis)
     parts = analysis["parts"]
-    pitched_count = sum(
-        1 for p in parts if not p.get("isRhythm") and p["notes"]
-    )
+    pitched_count = sum(1 for p in parts if not p.get("isRhythm") and p["notes"])
 
     pairs = []
     best_conf = 0.0
     for i in range(len(seqs)):
         for j in range(i + 1, len(seqs)):
-            r_ij, lag_ij = _similarity(seqs[i], seqs[j])  # i 선행
-            r_ji, lag_ji = _similarity(seqs[j], seqs[i])  # j 선행
+            # 정확 일치(이조 캐논) — 방향(선행/후행) 결정에 사용
+            r_ij, lag_ij = _similarity(seqs[i], seqs[j], 0)
+            r_ji, lag_ji = _similarity(seqs[j], seqs[i], 0)
             if r_ij >= r_ji:
-                ratio, lag, lead_i, fol_i = r_ij, lag_ij, idxs[i], idxs[j]
+                exact, lag, lead_i, fol_i = r_ij, lag_ij, idxs[i], idxs[j]
             else:
-                ratio, lag, lead_i, fol_i = r_ji, lag_ji, idxs[j], idxs[i]
-            best_conf = max(best_conf, ratio)
-            if ratio < 0.5:
-                continue  # 약한 쌍은 노출하지 않음
+                exact, lag, lead_i, fol_i = r_ji, lag_ji, idxs[j], idxs[i]
+            best_conf = max(best_conf, exact)
+            lag_sec = _lag_seconds(parts[lead_i], parts[fol_i], lag)
+
+            # 토널 응답 보정(C5): 1반음 허용 일치 + 실제 시간지연
+            tonal, tlag = _similarity(seqs[i], seqs[j], _TONAL_TOL) if r_ij >= r_ji \
+                else _similarity(seqs[j], seqs[i], _TONAL_TOL)
+            tonal_ok = (tonal >= _TONAL_MIN_RATIO and lag_sec >= _TONAL_MIN_LAGSEC)
+
+            if exact >= 0.5:
+                kind, score = "exact", exact
+            elif tonal_ok:
+                kind, score = "tonal", tonal
+                best_conf = max(best_conf, tonal)
+            else:
+                continue
             pairs.append({
-                "leader": lead_i,
-                "follower": fol_i,
-                "lagNotes": lag,
-                "lagSec": _lag_seconds(parts[lead_i], parts[fol_i], lag),
-                "similarity": round(ratio, 3),
+                "leader": lead_i, "follower": fol_i,
+                "lagNotes": lag, "lagSec": lag_sec,
+                "similarity": round(score, 3), "kind": kind,
             })
 
     pairs.sort(key=lambda p: p["similarity"], reverse=True)
-    detected = best_conf >= 0.6 and pitched_count >= 2
-    return {
-        "detected": detected,
-        "confidence": round(best_conf, 3),
-        "pairs": pairs,
+    detected = best_conf >= 0.6 and pitched_count >= 2 and bool(pairs)
+    return {"detected": detected, "confidence": round(best_conf, 3), "pairs": pairs}
+
+
+def mirror_detail(analysis: dict) -> dict:
+    """거울 대칭(역행/전위) 관계 → {detected, pairs[]} (C4).
+
+    - inversion(전위): 음정 부호 반전.        b' = [-x for x in b]
+    - retrograde(역행): 뒤집고 부호 반전.      b' = [-x for x in reversed(b)]
+    - retrograde-inversion: 뒤집기만(전위의 역행). b' = list(reversed(b))
+    각 pair: {base, mirror(=parts 인덱스), type, similarity}.
+    """
+    seqs, idxs = _seqs_and_idx(analysis)
+    transforms = {
+        "inversion": lambda b: [-x for x in b],
+        "retrograde": lambda b: [-x for x in reversed(b)],
+        "retrograde-inversion": lambda b: list(reversed(b)),
     }
+    pairs = []
+    best = 0.0
+    for i in range(len(seqs)):
+        for j in range(i + 1, len(seqs)):
+            best_t, best_r = None, 0.0
+            for name, fn in transforms.items():
+                r, _ = _similarity(seqs[i], fn(seqs[j]), 0)
+                if r > best_r:
+                    best_r, best_t = r, name
+            best = max(best, best_r)
+            if best_r >= 0.7:  # 거울 관계는 보수적으로(거짓양성 회피)
+                pairs.append({
+                    "base": idxs[i], "mirror": idxs[j],
+                    "type": best_t, "similarity": round(best_r, 3),
+                })
+    pairs.sort(key=lambda p: p["similarity"], reverse=True)
+    return {"detected": bool(pairs), "confidence": round(best, 3), "pairs": pairs}
 
 
 def classify(analysis: dict, canon: dict | None = None) -> dict:
@@ -130,7 +175,8 @@ def classify(analysis: dict, canon: dict | None = None) -> dict:
         return {"label": "기타", "confidence": round(1.0 - poly, 3),
                 "labelEn": "other"}
 
-    if canon_conf >= 0.6 and len(pitched) >= 2:
+    # C5: canon.detected 가 토널 보정을 포함하므로 detected 를 1차 기준으로 사용.
+    if canon.get("detected") and len(pitched) >= 2:
         return {"label": "캐논", "confidence": round(canon_conf, 3),
                 "labelEn": "canon"}
 
