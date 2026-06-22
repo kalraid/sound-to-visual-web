@@ -216,11 +216,13 @@ export class Terrain {
     const matte = this.renderStyle === "matte";
     const laneSpan = Math.max(LANE_GAP, (this._laneCount - 1) * LANE_GAP);
     const plateMat = new THREE.MeshStandardMaterial({
-      color: matte ? 0xcfcfcf : 0x141a2c, roughness: matte ? 0.95 : 0.6,
+      color: matte ? 0xcfcfcf : 0x39435f, roughness: matte ? 0.95 : 0.6,
       metalness: matte ? 0.0 : 0.2,
+      emissive: matte ? 0x000000 : 0x10141f, // 어두운 배경에서도 섬이 보이게
     });
     const pathMat = new THREE.MeshStandardMaterial({
-      color: matte ? 0xe6e6e6 : 0x2a3450, roughness: matte ? 0.95 : 0.5, metalness: 0.0,
+      color: matte ? 0xe6e6e6 : 0x556089, roughness: matte ? 0.95 : 0.5, metalness: 0.0,
+      emissive: matte ? 0x000000 : 0x1a2030,
     });
     // 섬 플레이트
     for (let s = 0; s < L.nSegs; s++) {
@@ -508,9 +510,10 @@ export class Terrain {
       const w = this._mainVoice
         ? this._worldXZ(position, this._mainVoice.laneZ)
         : this._worldXZ(position, 0);
-      const desired = new THREE.Vector3(w.wx - 34, 72, w.wz + 52);
-      const look = new THREE.Vector3(w.wx + 4, 2, w.wz - 6);
-      this.camera.position.lerp(desired, 0.05);
+      // 현재 섬을 가까이 부감으로 프레이밍(스크롤 overhead와 비슷한 거리)
+      const desired = new THREE.Vector3(w.wx - 18, 34, w.wz + 30);
+      const look = new THREE.Vector3(w.wx + 8, 3, w.wz - 4);
+      this.camera.position.lerp(desired, 0.06);
       this.camera.lookAt(look);
       return;
     }

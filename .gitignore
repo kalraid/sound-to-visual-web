@@ -9,3 +9,11 @@ backend/cache/
 .codex/
 *.pyc
 *.log
+
+# 로컬 실행 산출물
+.backend.pid
+.frontend.pid
+_dbg*.mjs
+_*.png
+backend.log
+frontend.log

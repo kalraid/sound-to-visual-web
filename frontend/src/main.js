@@ -8,7 +8,6 @@ const $ = (id) => document.getElementById(id);
 const audio = new AudioEngine();
 const score = new ScorePanel("osmd", "score-panel");
 const terrain = new Terrain("stage");
-window.__terrain = terrain; // debug
 
 let analysis = null;
 let maxVoices = 4;
