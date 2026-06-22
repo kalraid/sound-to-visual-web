@@ -11,6 +11,8 @@ const Y_HEIGHT = 10;
 const LANE_GAP = 8;
 const CUBE = 1.0;
 const LANE_THICK = 2.4; // 지형 z 두께
+const RAIL = 0.12;      // 쉼표(음이 끝난 뒤 다음 음 전까지) 얇은 선 높이
+const DRUM_H = 0.7;     // 드럼 타격 블록 높이 (음높이는 없지만 길이는 표현)
 
 // ③ 디오라마 무대화 (Phase B): 곡을 정사각 "섬"으로 나눠 스네이크(boustrophedon) 배치.
 const DIO_CELL = 60;          // 섬 한 변(월드 단위) = 한 구간의 진행 거리
@@ -392,14 +394,18 @@ export class Terrain {
   }
 
   _sampleHeights(notes, isRhythm) {
-    // 시간축을 잘게 샘플 → 음높이 유지(쉼표는 직전) → 이동평균으로 언덕화
+    // 시간축을 잘게 샘플 → 음이 울리는 구간만 음높이, 쉼표는 얇은 레일 → 이동평균으로 언덕화.
+    // (이전엔 쉼표에 직전 음높이를 유지해 선이 안 내려갔음 — 길이/쉼표 정보가 사라졌다.)
     const step = Math.max(0.03, this.duration / 4000);
     const xs = [], ys = [];
     let idx = 0;
     for (let t = 0; t <= this.duration; t += step) {
       while (idx + 1 < notes.length && notes[idx + 1].startSec <= t) idx++;
       const n = notes[idx];
-      const y = isRhythm ? 0.6 : (n ? this.yFor(n.midi) : 0);
+      let y = RAIL; // 쉼표 기본값 = 얇은 선
+      if (n && t >= n.startSec && t <= n.startSec + (n.durSec || 0.1)) {
+        y = isRhythm ? DRUM_H : Math.max(RAIL, this.yFor(n.midi)); // 음 지속 구간만 높이
+      }
       xs.push(t * X_PER_SEC);
       ys.push(y);
     }
@@ -414,19 +420,46 @@ export class Terrain {
     return { xs, ys: sm };
   }
 
-  // ① 이산 블록: 음표마다 평평한 캡 + 수직 라이저로 계단형 (스무딩 없음)
+  // ① 이산 블록: 음표마다 평평한 캡(가로폭=음길이) + 수직 라이저. 쉼표는 얇은 레일.
   _steppedHeights(notes, isRhythm) {
     const xs = [], ys = [];
+    const pt = (t, y) => { xs.push(t * X_PER_SEC); ys.push(y); };
+    let cursor = 0; // 직전까지 그린 시각(초)
     for (let i = 0; i < notes.length; i++) {
       const n = notes[i];
-      const y = isRhythm ? 0.6 : this.yFor(n.midi);
-      const x0 = n.startSec * X_PER_SEC;
-      const x1 = (n.startSec + (n.durSec || 0.2)) * X_PER_SEC;
-      if (xs.length) { xs.push(x0); ys.push(ys[ys.length - 1]); } // 직전 높이를 음표 시작까지 유지
-      xs.push(x0); ys.push(y); // 수직 라이저
-      xs.push(x1); ys.push(y); // 평평한 캡(음길이=가로폭)
+      const s = Math.max(n.startSec, cursor);
+      const e = Math.max(s, n.startSec + (n.durSec || 0.1));
+      const h = isRhythm ? DRUM_H : Math.max(RAIL, this.yFor(n.midi));
+      if (n.startSec > cursor + 1e-3) {
+        // 쉼표 구간: 얇은 레일로 진행하다 음표 시작에서 수직 상승
+        pt(cursor, RAIL); pt(n.startSec, RAIL); pt(n.startSec, h);
+      } else {
+        // 직전 음과 이어짐(레가토): 캡 높이에서 새 높이로 수직 전환
+        pt(s, h);
+      }
+      pt(e, h);   // 평평한 캡 = 음 길이
+      cursor = e;
     }
+    if (cursor < this.duration - 1e-3) { pt(cursor, RAIL); pt(this.duration, RAIL); } // 끝 쉼표
     return { xs, ys };
+  }
+
+  // 시각 t에 울리고 있는 음표(없으면 null) — 마커 높이를 지형(레일/캡)과 맞추는 데 사용.
+  _noteAt(notes, t) {
+    let lo = 0, hi = notes.length - 1, idx = -1;
+    while (lo <= hi) {
+      const m = (lo + hi) >> 1;
+      if (notes[m].startSec <= t) { idx = m; lo = m + 1; } else hi = m - 1;
+    }
+    if (idx < 0) return null;
+    const n = notes[idx];
+    return t <= n.startSec + (n.durSec || 0.1) ? n : null;
+  }
+
+  _heightAt(notes, t, isRhythm) {
+    const n = this._noteAt(notes, t);
+    if (!n) return RAIL; // 쉼표 → 얇은 선 위
+    return isRhythm ? DRUM_H : Math.max(RAIL, this.yFor(n.midi));
   }
 
   _buildVoice(part, laneIndex, isRhythm) {
@@ -516,16 +549,6 @@ export class Terrain {
     });
   }
 
-  _pitchAt(notes, position) {
-    let lo = 0, hi = notes.length - 1, idx = -1;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (notes[mid].startSec <= position) { idx = mid; lo = mid + 1; } else hi = mid - 1;
-    }
-    if (idx < 0) return notes.length ? notes[0].midi : null;
-    return notes[idx].midi;
-  }
-
   flashByPart(partIndex) {
     const v = this.voices.find((x) => x.partIndex === partIndex);
     if (v) { v.flash = 1; this._spawnParticles(v); }
@@ -554,8 +577,9 @@ export class Terrain {
       const t = chase ? Math.max(0, position - chase.lagSec) : position;
       const laneZ = chase ? chase.leaderVoice.laneZ : v.laneZ;
       const notesForY = chase ? chase.leaderVoice.notes : v.notes;
-      const midi = this._pitchAt(notesForY, t);
-      const y = v.isRhythm ? 0.6 : (midi != null ? this.yFor(midi) : 0);
+      const isR = chase ? chase.leaderVoice.isRhythm : v.isRhythm;
+      // 마커도 지형과 일치: 음 지속 중엔 캡 높이, 쉼표엔 얇은 레일 위.
+      const y = this._heightAt(notesForY, t, isR);
       const p = dioOn ? this._worldXZ(t, laneZ) : { wx: t * X_PER_SEC, wz: laneZ };
       v.cube.position.set(p.wx, y + CUBE / 2, p.wz);
       if (v.flash > 0) {
