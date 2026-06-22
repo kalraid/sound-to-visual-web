@@ -55,7 +55,7 @@ export class Terrain {
     this.terrainShape = "smooth"; // smooth | stepped
     this.renderStyle = "glow";    // glow | matte
     this.trackWidth = "wide";     // wide | narrow
-    this.stage = "scroll";        // scroll | diorama
+    this.stageMode = "scroll";    // scroll | diorama (※ this.stage 는 DOM 요소이므로 이름 분리)
     this.diorama = null;          // 레이아웃 메타(load 시 계산)
     this._lastAnalysis = null;
     this._lastMaxVoices = 0;
@@ -65,6 +65,12 @@ export class Terrain {
 
     this._resize = this._resize.bind(this);
     window.addEventListener("resize", this._resize);
+    // 생성자 시점엔 stage가 아직 0×0(레이아웃 전)이라 _resize만으로는 1×1로 굳는다.
+    // ResizeObserver로 초기 레이아웃 확정 + 이후 크기 변화에 모두 반응.
+    if (typeof ResizeObserver !== "undefined") {
+      this._ro = new ResizeObserver(this._resize);
+      this._ro.observe(this.stage);
+    }
 
     this.setBackgroundMode("grid");
     this._resize();
@@ -165,7 +171,7 @@ export class Terrain {
   // ② 머티리얼/배경/블룸만 → 재빌드 없이 즉시 적용
   setRenderStyle(v) { this.renderStyle = v; this.applyRenderStyle(); }
   // ③ 디오라마: 지오메트리/레이아웃 박힘 → 재빌드
-  setStage(v) { this.stage = v; this._rebuild(); }
+  setStage(v) { this.stageMode = v; this._rebuild(); }
 
   // ---------- ③ 디오라마 레이아웃 ----------
   _computeDiorama() {
@@ -211,7 +217,7 @@ export class Terrain {
       c.material && c.material.dispose();
       this.stageGroup.remove(c);
     }
-    if (this.stage !== "diorama" || !this.diorama) return;
+    if (this.stageMode !== "diorama" || !this.diorama) return;
     const L = this.diorama;
     const matte = this.renderStyle === "matte";
     const laneSpan = Math.max(LANE_GAP, (this._laneCount - 1) * LANE_GAP);
@@ -365,7 +371,7 @@ export class Terrain {
 
     // 채워진 입체 지형: 상단 캡 + 전면 벽 (라인 아래를 바닥까지 채움)
     const thick = this._laneThick();
-    const dioOn = this.stage === "diorama" && this.diorama;
+    const dioOn = this.stageMode === "diorama" && this.diorama;
     const positions = [], normals = [];
     const push = (x, y, z, nx, ny, nz) => { positions.push(x, y, z); normals.push(nx, ny, nz); };
     for (let i = 0; i + 1 < xs.length; i++) {
@@ -473,7 +479,7 @@ export class Terrain {
   }
 
   update(position, dt) {
-    const dioOn = this.stage === "diorama" && this.diorama;
+    const dioOn = this.stageMode === "diorama" && this.diorama;
     for (const v of this.voices) {
       const midi = this._pitchAt(v.notes, position);
       const y = v.isRhythm ? 0.6 : (midi != null ? this.yFor(midi) : 0);
@@ -506,7 +512,7 @@ export class Terrain {
 
   _updateCamera(position) {
     // ③ 디오라마: 아이소메트릭 부감으로 현재 섬을 따라간다
-    if (this.stage === "diorama" && this.diorama) {
+    if (this.stageMode === "diorama" && this.diorama) {
       const w = this._mainVoice
         ? this._worldXZ(position, this._mainVoice.laneZ)
         : this._worldXZ(position, 0);

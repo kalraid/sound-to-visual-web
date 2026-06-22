@@ -98,7 +98,7 @@ async function uploadFile(file) {
   terrain.terrainShape = $("shape-select").value;
   terrain.renderStyle = $("style-select").value;
   terrain.trackWidth = $("track-select").value;
-  terrain.stage = $("stage-select").value;
+  terrain.stageMode = $("stage-select").value;
   terrain.load(analysis, maxVoices);
   await score.load(analysis);
   // 자동맞춤된 줌을 슬라이더에 반영
