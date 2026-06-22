@@ -64,9 +64,14 @@
       `_lag_seconds`로 lag(음표수)→초 환산(중앙값, 템포변화 견고). `app._build_result`가 부착.
       `classify(analysis, canon=None)`로 시그니처 확장(기존 단일인자 테스트 호환). 백엔드 4 테스트 통과.
       ⚠️ lagNotes=0이어도 lagSec은 절대초 차이를 잡음(canon 샘플: lagNotes 0 / lagSec 1.0). C2가 이걸 씀.
-- [ ] **C2. 시차 추격(프론트)**: 캐논 분류 시, 같은 구조 위에서 마커 출발/주행을 lag만큼
-      시차 정렬. 비캐논은 강조 레이어만 off(엔진 분기 금지 — ADR 0012). `terrain.js` 마커 로직.
-      → **C1 완료로 데이터 준비됨**: `analysis.canon.pairs[].lagSec` 사용.
+- [x] **C2. 시차 추격(프론트)** ✅ (2026-06-22): 캐논 감지 시 '후행' 성부 마커가 '선행' 성부의
+      트랙(레인)·능선 위에서 `position - lagSec` 시점을 달려 같은 구조를 추격.
+      `terrain._buildChaseMap()`이 `canon.pairs`로 voice별 `chase{leaderVoice,lagSec}` 매핑,
+      `update()`가 추격 성부의 cube를 (t, leaderLane, leader음높이)로 재배치. scroll·diorama 공통
+      (`_worldXZ` 경유). 토글 `canon-select`(추격강조 on/off, 기본 on). 비캐논/off는 원래 동작 그대로.
+      **수치 검증(2026-06-22)**: canon.mid, t=4s → 후행 x=18·z=-8(선행 레인), 선행 x=24·z=-8 →
+      같은 트랙 6단위(1s) 뒤 추격 확인. off 시 x=24·z=0(자기 레인) 복귀. 콘솔 에러 없음.
+      ⚠️ 백엔드 캐시(`backend/cache/*.json`)는 C1 이전 결과라 canon 필드가 없을 수 있음 → 검증 시 캐시 삭제.
 - [x] **C3. 악보 패널 선택형** ✅ (2026-06-22): 신규 `frontend/src/pianoroll.js`(`PianoRollPanel`,
       ScorePanel과 동일 인터페이스 load/update/reset/setZoom/zoom). x=시간/y=음높이/색=성부색,
       playhead 좌측 25% 고정, 현재 음 강조 테두리, 옥타브 그리드, ResizeObserver+dpr.

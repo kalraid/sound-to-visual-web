@@ -10,6 +10,7 @@ const audio = new AudioEngine();
 const score = new ScorePanel("osmd", "score-panel");
 const pianoroll = new PianoRollPanel("pianoroll", "score-panel");
 const terrain = new Terrain("stage");
+window.__terrain = terrain; // 헤드리스 수치 검증용(3D는 스크린샷 불가 — TODO 참고)
 
 // 악보 패널 선택형(C3): osmd | pianoroll. 둘 다 로드해 두고 표시만 토글.
 let scoreMode = "osmd";
@@ -64,6 +65,7 @@ $("shape-select").addEventListener("change", (e) => terrain.setTerrainShape(e.ta
 $("style-select").addEventListener("change", (e) => terrain.setRenderStyle(e.target.value));
 $("track-select").addEventListener("change", (e) => terrain.setTrackWidth(e.target.value));
 $("stage-select").addEventListener("change", (e) => terrain.setStage(e.target.value));
+$("canon-select").addEventListener("change", (e) => terrain.setCanonEmphasis(e.target.value === "on"));
 $("score-select").addEventListener("change", (e) => {
   scoreMode = e.target.value;
   const usePiano = scoreMode === "pianoroll";
@@ -116,6 +118,7 @@ async function uploadFile(file) {
   terrain.renderStyle = $("style-select").value;
   terrain.trackWidth = $("track-select").value;
   terrain.stageMode = $("stage-select").value;
+  terrain.canonEmphasis = $("canon-select").value === "on";
   terrain.load(analysis, maxVoices);
   await score.load(analysis);
   await pianoroll.load(analysis);

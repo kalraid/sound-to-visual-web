@@ -57,6 +57,9 @@ export class Terrain {
     this.trackWidth = "wide";     // wide | narrow
     this.stageMode = "scroll";    // scroll | diorama (※ this.stage 는 DOM 요소이므로 이름 분리)
     this.diorama = null;          // 레이아웃 메타(load 시 계산)
+    // 캐논 강조 — 시차 추격 (ADR 0012 / C2). 캐논 분류 시에만 동작하는 가산 레이어.
+    this.canonEmphasis = true;    // grill 확정: 기본 켜짐. 비캐논이면 자동 무효.
+    this.canon = null;            // analysis.canon (load 시 보관)
     this._lastAnalysis = null;
     this._lastMaxVoices = 0;
 
@@ -172,6 +175,8 @@ export class Terrain {
   setRenderStyle(v) { this.renderStyle = v; this.applyRenderStyle(); }
   // ③ 디오라마: 지오메트리/레이아웃 박힘 → 재빌드
   setStage(v) { this.stageMode = v; this._rebuild(); }
+  // C2 시차 추격: 마커 위치만 바꾸므로 재빌드 불필요(update가 매 프레임 읽음).
+  setCanonEmphasis(on) { this.canonEmphasis = on; }
 
   // ---------- ③ 디오라마 레이아웃 ----------
   _computeDiorama() {
@@ -321,7 +326,28 @@ export class Terrain {
     selected.forEach((part, i) => this._buildVoice(part, i, part.isRhythm));
     this._mainVoice = this.voices.find((v) => !v.isRhythm) || this.voices[0] || null;
     this._laneCount = this.voices.length;
+    this.canon = analysis.canon || null;
+    this._buildChaseMap();
     this.applyRenderStyle(); // 재빌드 후 렌더 스타일 + 디오라마 무대 재적용
+  }
+
+  // C2: 각 성부가 어떤 캐논쌍의 '후행'인지 → 선행 성부 트랙 위에서 lagSec 만큼 뒤를
+  // 따라가도록 매핑. 캐논 미감지 시 비활성. lag≈0(시간차 없음)은 추격이 안 보이니 제외.
+  _buildChaseMap() {
+    for (const v of this.voices) v.chase = null;
+    const c = this.canon;
+    if (!c || !c.detected || !c.pairs) return;
+    for (const v of this.voices) {
+      let best = null;
+      for (const pr of c.pairs) {
+        if (pr.follower !== v.partIndex || pr.lagSec <= 0.05) continue;
+        const leaderVoice = this.voices.find((x) => x.partIndex === pr.leader);
+        if (leaderVoice && leaderVoice !== v && (!best || pr.similarity > best.sim)) {
+          best = { leaderVoice, lagSec: pr.lagSec, sim: pr.similarity };
+        }
+      }
+      v.chase = best; // {leaderVoice, lagSec, sim} | null
+    }
   }
 
   _sampleHeights(notes, isRhythm) {
@@ -481,9 +507,15 @@ export class Terrain {
   update(position, dt) {
     const dioOn = this.stageMode === "diorama" && this.diorama;
     for (const v of this.voices) {
-      const midi = this._pitchAt(v.notes, position);
+      // C2 시차 추격: 후행 성부는 선행 성부의 트랙(레인) 위에서 lagSec 만큼 뒤 시점을
+      // 달려 같은 구조를 '추격'한다. 비캐논/토글 off면 자기 트랙·현재시각 그대로.
+      const chase = this.canonEmphasis ? v.chase : null;
+      const t = chase ? Math.max(0, position - chase.lagSec) : position;
+      const laneZ = chase ? chase.leaderVoice.laneZ : v.laneZ;
+      const notesForY = chase ? chase.leaderVoice.notes : v.notes;
+      const midi = this._pitchAt(notesForY, t);
       const y = v.isRhythm ? 0.6 : (midi != null ? this.yFor(midi) : 0);
-      const p = dioOn ? this._worldXZ(position, v.laneZ) : { wx: position * X_PER_SEC, wz: v.laneZ };
+      const p = dioOn ? this._worldXZ(t, laneZ) : { wx: t * X_PER_SEC, wz: laneZ };
       v.cube.position.set(p.wx, y + CUBE / 2, p.wz);
       if (v.flash > 0) {
         v.flash = Math.max(0, v.flash - dt * 3);
