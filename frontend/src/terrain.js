@@ -10,6 +10,8 @@ const X_PER_SEC = 6;
 const Y_HEIGHT = 10;
 const LANE_GAP = 8;
 const LANE_GAP_SPREAD = 14; // D1: spread 모드 레인 간격
+const A_WAVE = 2.5;          // D4: 리본 파동 진폭 (Z 단위)
+const ω_WAVE = (Math.PI * 2) / 30; // D4: 파동 주기 30초 (한 파장)
 const CUBE = 1.0;
 const LANE_THICK = 2.4; // 지형 z 두께
 const RAIL = 0.12;      // 쉼표(음이 끝난 뒤 다음 음 전까지) 얇은 선 높이
@@ -69,6 +71,8 @@ export class Terrain {
     // D1: 성부 경로 분리 + 화음 개별 표시
     this.laneSep = "tight";       // tight(기존 LANE_GAP=8) | spread(14)
     this.chordDetail = "merged";  // merged(기존) | individual(화음음 개별 구체)
+    // D4: 리본 파동 경로
+    this.ribbonMode = "straight"; // straight(기존) | wave(사인파 굽이)
     this._lastAnalysis = null;
     this._lastMaxVoices = 0;
     // D3: 섹션 전환 추적 (카메라 호핑 + HUD)
@@ -196,7 +200,13 @@ export class Terrain {
   // D1: 레인 분리 + 화음 표시 — 지오메트리 박힘 → 재빌드
   setLaneSep(v) { this.laneSep = v; this._rebuild(); }
   setChordDetail(v) { this.chordDetail = v; this._rebuild(); }
+  setRibbonMode(v) { this.ribbonMode = v; this._rebuild(); }
   _laneGap() { return this.laneSep === "spread" ? LANE_GAP_SPREAD : LANE_GAP; }
+  // D4: 레인 기준 z에서의 사인파 오프셋. laneIndex별로 위상 120° 차이 → 서로 독립적으로 굽이침.
+  _ribbonZ(timeSec, laneIndex) {
+    if (this.ribbonMode !== "wave") return 0;
+    return A_WAVE * Math.sin(ω_WAVE * timeSec + laneIndex * (Math.PI * 2 / 3));
+  }
 
   // ---------- ③ 디오라마 레이아웃 ----------
   _computeDiorama() {
@@ -515,23 +525,28 @@ export class Terrain {
     const push = (x, y, z, nx, ny, nz) => { positions.push(x, y, z); normals.push(nx, ny, nz); };
     for (let i = 0; i + 1 < xs.length; i++) {
       const y0 = ys[i], y1 = ys[i + 1];
-      // 세그먼트 좌표 → (디오라마면 접힌) 월드 좌표
-      let wx0, wx1, cz;
+      // D4: 리본 파동 — 각 세그먼트 양끝의 z 중심을 독립 계산(wave면 사인 오프셋 부가).
+      const rz0 = this._ribbonZ(xs[i] / X_PER_SEC, laneIndex);
+      const rz1 = this._ribbonZ(xs[i + 1] / X_PER_SEC, laneIndex);
+      let wx0, wx1, cz0, cz1;
       if (dioOn) {
-        const a = this._worldXZ(xs[i] / X_PER_SEC, laneZ);
-        const b = this._worldXZ(xs[i + 1] / X_PER_SEC, laneZ);
-        if (a.s !== b.s) continue; // 섬 경계에서 끊음(섬 사이로 늘어나지 않게)
-        wx0 = a.wx; wx1 = b.wx; cz = a.wz;
+        const a = this._worldXZ(xs[i] / X_PER_SEC, laneZ + rz0);
+        const b = this._worldXZ(xs[i + 1] / X_PER_SEC, laneZ + rz1);
+        if (a.s !== b.s) continue; // 섬 경계에서 끊음
+        wx0 = a.wx; wx1 = b.wx; cz0 = a.wz; cz1 = b.wz;
       } else {
-        wx0 = xs[i]; wx1 = xs[i + 1]; cz = laneZ;
+        wx0 = xs[i]; wx1 = xs[i + 1];
+        cz0 = laneZ + rz0; cz1 = laneZ + rz1;
       }
-      const z0 = cz - thick / 2, z1 = cz + thick / 2;
-      // 상단 캡 (위 방향)
-      push(wx0, y0, z0, 0, 1, 0); push(wx0, y0, z1, 0, 1, 0); push(wx1, y1, z1, 0, 1, 0);
-      push(wx0, y0, z0, 0, 1, 0); push(wx1, y1, z1, 0, 1, 0); push(wx1, y1, z0, 0, 1, 0);
-      // 전면 벽 (카메라쪽 z1)
-      push(wx0, y0, z1, 0, 0, 1); push(wx0, 0, z1, 0, 0, 1); push(wx1, 0, z1, 0, 0, 1);
-      push(wx0, y0, z1, 0, 0, 1); push(wx1, 0, z1, 0, 0, 1); push(wx1, y1, z1, 0, 0, 1);
+      // 세그먼트 양끝 z 엣지(a=뒤쪽, b=카메라쪽)
+      const za0 = cz0 - thick / 2, zb0 = cz0 + thick / 2;
+      const za1 = cz1 - thick / 2, zb1 = cz1 + thick / 2;
+      // 상단 캡 (사다리꼴 → 삼각형 2개)
+      push(wx0, y0, za0, 0, 1, 0); push(wx0, y0, zb0, 0, 1, 0); push(wx1, y1, zb1, 0, 1, 0);
+      push(wx0, y0, za0, 0, 1, 0); push(wx1, y1, zb1, 0, 1, 0); push(wx1, y1, za1, 0, 1, 0);
+      // 전면 벽 (카메라쪽 b 엣지)
+      push(wx0, y0, zb0, 0, 0, 1); push(wx0, 0, zb0, 0, 0, 1); push(wx1, 0, zb1, 0, 0, 1);
+      push(wx0, y0, zb0, 0, 0, 1); push(wx1, 0, zb1, 0, 0, 1); push(wx1, y1, zb1, 0, 0, 1);
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
@@ -572,7 +587,8 @@ export class Terrain {
           const h = Math.max(0.4, hi - lo);
           const w = Math.max(0.4, (n.durSec || 0.2) * X_PER_SEC);
           const tMid = n.startSec + (n.durSec || 0.2) / 2;
-          const p = dioOn ? this._worldXZ(tMid, laneZ) : { wx: n.startSec * X_PER_SEC + w / 2, wz: laneZ };
+          const wz = laneZ + this._ribbonZ(tMid, laneIndex);
+          const p = dioOn ? this._worldXZ(tMid, wz) : { wx: n.startSec * X_PER_SEC + w / 2, wz };
           m.compose(new THREE.Vector3(p.wx, (lo + hi) / 2, p.wz), q,
             new THREE.Vector3(w * 0.9, h, thick * 0.7));
           pillars.setMatrixAt(i, m);
@@ -603,7 +619,8 @@ export class Terrain {
         );
         const mx = new THREE.Matrix4();
         dotData.forEach((d, idx) => {
-          const p = dioOn ? this._worldXZ(d.t, laneZ) : { wx: d.t * X_PER_SEC, wz: laneZ };
+          const dwz = laneZ + this._ribbonZ(d.t, laneIndex);
+          const p = dioOn ? this._worldXZ(d.t, dwz) : { wx: d.t * X_PER_SEC, wz: dwz };
           mx.setPosition(p.wx, d.y + 0.22, p.wz);
           chordDots.setMatrixAt(idx, mx);
         });
@@ -613,7 +630,7 @@ export class Terrain {
     }
 
     this.voices.push({
-      partIndex: part.index, notes: part.notes, laneZ, terrain, cube, pillars, chordDots,
+      partIndex: part.index, notes: part.notes, laneZ, laneIndex, terrain, cube, pillars, chordDots,
       mat: cubeMat, color, isRhythm, flash: 0,
     });
   }
@@ -648,11 +665,14 @@ export class Terrain {
       const chase = this.canonEmphasis ? v.chase : null;
       const t = chase ? Math.max(0, position - chase.lagSec) : position;
       const laneZ = chase ? chase.leaderVoice.laneZ : v.laneZ;
+      const vi = chase ? chase.leaderVoice.laneIndex : v.laneIndex; // D4 ribbon phase
       const notesForY = chase ? chase.leaderVoice.notes : v.notes;
       const isR = chase ? chase.leaderVoice.isRhythm : v.isRhythm;
+      // D4: 리본 파동 오프셋 적용 — 큐브가 지형 리본과 함께 z방향으로 굽이침.
+      const effectiveLaneZ = laneZ + this._ribbonZ(t, vi);
       // 마커도 지형과 일치: 음 지속 중엔 캡 높이, 쉼표엔 얇은 레일 위.
       const y = this._heightAt(notesForY, t, isR);
-      const p = dioOn ? this._worldXZ(t, laneZ) : { wx: t * X_PER_SEC, wz: laneZ };
+      const p = dioOn ? this._worldXZ(t, effectiveLaneZ) : { wx: t * X_PER_SEC, wz: effectiveLaneZ };
       v.cube.position.set(p.wx, y + CUBE / 2, p.wz);
       if (v.flash > 0) {
         v.flash = Math.max(0, v.flash - dt * 3);

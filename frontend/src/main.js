@@ -69,6 +69,7 @@ $("canon-select").addEventListener("change", (e) => terrain.setCanonEmphasis(e.t
 $("mirror-select").addEventListener("change", (e) => terrain.setMirrorEmphasis(e.target.value === "on"));
 $("lane-sep-select").addEventListener("change", (e) => terrain.setLaneSep(e.target.value));
 $("chord-select").addEventListener("change", (e) => terrain.setChordDetail(e.target.value));
+$("ribbon-select").addEventListener("change", (e) => terrain.setRibbonMode(e.target.value));
 $("score-select").addEventListener("change", (e) => {
   scoreMode = e.target.value;
   const usePiano = scoreMode === "pianoroll";
@@ -125,6 +126,7 @@ async function uploadFile(file) {
   terrain.mirrorEmphasis = $("mirror-select").value === "on";
   terrain.laneSep = $("lane-sep-select").value;
   terrain.chordDetail = $("chord-select").value;
+  terrain.ribbonMode = $("ribbon-select").value;
   terrain.load(analysis, maxVoices);
   await score.load(analysis);
   await pianoroll.load(analysis);
