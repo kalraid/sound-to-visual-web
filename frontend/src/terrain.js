@@ -71,6 +71,9 @@ export class Terrain {
     this.chordDetail = "merged";  // merged(기존) | individual(화음음 개별 구체)
     this._lastAnalysis = null;
     this._lastMaxVoices = 0;
+    // D3: 섹션 전환 추적 (카메라 호핑 + HUD)
+    this._lastSeg = -1;
+    this._hopFrames = 0;
 
     this.stageGroup = new THREE.Group(); // 디오라마 섬 플레이트 + 연결로
     this.scene.add(this.stageGroup);
@@ -272,6 +275,32 @@ export class Terrain {
       path.rotation.y = -Math.atan2(dz, dx);
       this.stageGroup.add(path);
     }
+    // D3: 섬마다 §N 라벨 스프라이트
+    for (let s = 0; s < L.nSegs; s++) {
+      const { baseX, baseZ } = this._cellBase(s);
+      const spr = this._makeTextSprite(`§${s + 1}`, matte ? "#222" : "#c8d0ff");
+      spr.position.set(baseX + L.cell / 2, Y_HEIGHT + 5, baseZ - laneSpan / 2);
+      this.stageGroup.add(spr);
+    }
+    this._lastSeg = -1; // 재빌드 시 hop 기준 초기화
+  }
+
+  // D3: 섹션 번호를 캔버스 텍스처로 그린 스프라이트 반환
+  _makeTextSprite(text, color = "#c8d0ff") {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128; canvas.height = 64;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(6, 8, 116, 48);
+    ctx.fillStyle = color;
+    ctx.font = "bold 34px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 64, 34);
+    const tex = new THREE.CanvasTexture(canvas);
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    spr.scale.set(12, 6, 1);
+    return spr;
   }
 
   applyRenderStyle() {
@@ -609,6 +638,9 @@ export class Terrain {
   }
 
   update(position, dt) {
+    // D3: 스크롤 모드 전환 시 섹션 HUD 숨김
+    const hud = document.getElementById("section-hud");
+    if (hud) hud.style.display = (this.stageMode === "diorama") ? "" : "none";
     const dioOn = this.stageMode === "diorama" && this.diorama;
     for (const v of this.voices) {
       // C2 시차 추격: 후행 성부는 선행 성부의 트랙(레인) 위에서 lagSec 만큼 뒤 시점을
@@ -650,13 +682,26 @@ export class Terrain {
   _updateCamera(position) {
     // ③ 디오라마: 아이소메트릭 부감으로 현재 섬을 따라간다
     if (this.stageMode === "diorama" && this.diorama) {
+      const seg = Math.min(
+        Math.max(0, Math.floor(position / this.diorama.segDur)),
+        this.diorama.nSegs - 1
+      );
+      // D3: 섬 전환 감지 → 카메라 hop (lerp 계수 급상승, 2프레임 유지)
+      if (seg !== this._lastSeg) {
+        this._hopFrames = 6; // 약 0.1s(60fps 기준) 동안 빠른 lerp
+        this._lastSeg = seg;
+        // 섹션 HUD 갱신
+        const hud = document.getElementById("section-hud");
+        if (hud) hud.textContent = `§${seg + 1} / ${this.diorama.nSegs}`;
+      }
+      if (this._hopFrames > 0) this._hopFrames--;
+      const lerpF = (this._hopFrames > 0) ? 0.28 : 0.06;
       const w = this._mainVoice
         ? this._worldXZ(position, this._mainVoice.laneZ)
         : this._worldXZ(position, 0);
-      // 현재 섬을 가까이 부감으로 프레이밍(스크롤 overhead와 비슷한 거리)
       const desired = new THREE.Vector3(w.wx - 18, 34, w.wz + 30);
       const look = new THREE.Vector3(w.wx + 8, 3, w.wz - 4);
-      this.camera.position.lerp(desired, 0.06);
+      this.camera.position.lerp(desired, lerpF);
       this.camera.lookAt(look);
       return;
     }
