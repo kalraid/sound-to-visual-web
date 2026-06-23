@@ -351,8 +351,9 @@ export class Terrain {
     this._buildMirror();     // C4 거울상 고스트(applyRenderStyle 뒤: 베이스 지형 머티리얼 확정 후)
   }
 
-  // C4: 역행/전위로 감지된 거울 대칭쌍 → 베이스 성부 지형을 기하 반사한 '검은 거울상'을
-  // mirror 성부 레인 위에 보조 표시(영상2 핵심). 접힌 좌표가 깨지므로 scroll 모드에서만.
+  // C4+D2: 역행/전위로 감지된 거울 대칭쌍 → 베이스 성부 지형을 바닥 아래로 뒤집은
+  // '검은 수면 반사' 고스트. 같은 x·z에 겹쳐 y=0 아래로 내림(scale.y=-1 → y=h → -h).
+  // 역행(retrograde)은 시간축도 반사. 접힌 좌표가 깨지므로 scroll 모드에서만.
   _buildMirror() {
     while (this.mirrorGroup.children.length) {
       const c = this.mirrorGroup.children.pop();
@@ -362,22 +363,22 @@ export class Terrain {
     const m = this.mirror;
     if (!this.mirrorEmphasis || !m || !m.detected || this.stageMode === "diorama") return;
     const byPart = (pi) => this.voices.find((v) => v.partIndex === pi);
-    const xc = (this.duration * X_PER_SEC) / 2; // 시간축 중심(역행 반사축)
+    const xc = (this.duration * X_PER_SEC) / 2;
     for (const pr of m.pairs) {
-      const base = byPart(pr.base), mir = byPart(pr.mirror);
-      if (!base || !mir || !base.terrain) continue;
+      const base = byPart(pr.base);
+      if (!base || !base.terrain) continue;
       const ghost = new THREE.Mesh(
-        base.terrain.geometry, // 지오메트리 공유(읽기 전용) — 변환은 transform으로
+        base.terrain.geometry, // 지오메트리 공유 — 변환은 scale/position으로
         new THREE.MeshStandardMaterial({
-          color: 0x111111, transparent: true, opacity: 0.38,
+          color: 0x080c1a, transparent: true, opacity: 0.42,
           roughness: 1.0, metalness: 0.0, side: THREE.DoubleSide, depthWrite: false,
         })
       );
-      const inv = pr.type === "inversion" || pr.type === "retrograde-inversion";
+      // 수면 반사: y=0 기준으로 아래로 뒤집음 (scale.y=-1 → 지형 y=h가 -h로)
+      ghost.scale.y = -1;
+      // 역행: 시간축도 반사
       const retro = pr.type === "retrograde" || pr.type === "retrograde-inversion";
-      if (inv) { ghost.scale.y = -1; ghost.position.y = Y_HEIGHT; } // 음높이축 반사
-      if (retro) { ghost.scale.x = -1; ghost.position.x = 2 * xc; } // 시간축 반사
-      ghost.position.z += mir.laneZ - base.laneZ; // mirror 성부 레인으로 이동
+      if (retro) { ghost.scale.x = -1; ghost.position.x = 2 * xc; }
       ghost.userData.mirrorOf = pr;
       this.mirrorGroup.add(ghost);
     }
