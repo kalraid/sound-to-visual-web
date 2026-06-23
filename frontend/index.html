@@ -137,6 +137,12 @@
             <option value="wave">굽이</option>
           </select>
         </label>
+        <label>코너롤
+          <select id="corner-roll-select">
+            <option value="off" selected>끄기(기존)</option>
+            <option value="on">켜기</option>
+          </select>
+        </label>
         <label>악보
           <select id="score-select">
             <option value="osmd" selected>오선보(기존)</option>
@@ -156,6 +162,8 @@
         <div id="section-hud" style="display:none; position:absolute; top:12px; left:16px;
           background:rgba(0,0,0,0.55); color:#c8d0ff; padding:4px 14px; border-radius:8px;
           font-size:14px; font-weight:700; pointer-events:none; letter-spacing:0.05em;">§1 / 1</div>
+        <canvas id="mini-roll" style="display:none; position:absolute; bottom:16px; left:16px;
+          width:220px; height:110px; border-radius:6px; pointer-events:none;"></canvas>
       </div>
 
       <div id="transport">

@@ -1,7 +1,7 @@
 // 오케스트레이션: 업로드 → /analyze → 악보+지형+오디오 로드 → 단일 루프로 동기.
 import { AudioEngine } from "./audio.js";
 import { ScorePanel } from "./score.js";
-import { PianoRollPanel } from "./pianoroll.js";
+import { PianoRollPanel, MiniRollOverlay } from "./pianoroll.js";
 import { Terrain } from "./terrain.js";
 
 const $ = (id) => document.getElementById(id);
@@ -9,6 +9,7 @@ const $ = (id) => document.getElementById(id);
 const audio = new AudioEngine();
 const score = new ScorePanel("osmd", "score-panel");
 const pianoroll = new PianoRollPanel("pianoroll", "score-panel");
+const miniRoll = new MiniRollOverlay("mini-roll"); // D5 코너 오버레이
 const terrain = new Terrain("stage");
 window.__terrain = terrain; // 헤드리스 수치 검증용(3D는 스크린샷 불가 — TODO 참고)
 
@@ -70,6 +71,9 @@ $("mirror-select").addEventListener("change", (e) => terrain.setMirrorEmphasis(e
 $("lane-sep-select").addEventListener("change", (e) => terrain.setLaneSep(e.target.value));
 $("chord-select").addEventListener("change", (e) => terrain.setChordDetail(e.target.value));
 $("ribbon-select").addEventListener("change", (e) => terrain.setRibbonMode(e.target.value));
+$("corner-roll-select").addEventListener("change", (e) => {
+  $("mini-roll").style.display = e.target.value === "on" ? "" : "none";
+});
 $("score-select").addEventListener("change", (e) => {
   scoreMode = e.target.value;
   const usePiano = scoreMode === "pianoroll";
@@ -130,6 +134,7 @@ async function uploadFile(file) {
   terrain.load(analysis, maxVoices);
   await score.load(analysis);
   await pianoroll.load(analysis);
+  await miniRoll.load(analysis);
   // 활성 패널의 줌을 슬라이더에 반영
   const z = activeScore().zoom.toFixed(1);
   $("score-zoom").value = z;
@@ -188,6 +193,7 @@ function loop() {
     }
     terrain.update(pos, dt);
     activeScore().update(pos);
+    miniRoll.update(pos);
     $("seek").value = audio.duration ? Math.round((pos / audio.duration) * 1000) : 0;
     $("time").textContent = `${fmt(pos)} / ${fmt(audio.duration)}`;
     if (!audio.playing && pos >= audio.duration && audio.duration > 0) {

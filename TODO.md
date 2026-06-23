@@ -113,8 +113,10 @@
       각 레인이 독립적으로 굽이침. 지형 지오메트리 루프를 cz0/cz1 per-segment로 교체해
       진짜 사다리꼴 단면 생성. pillars·chordDots·큐브(update) 모두 동일 ribbonZ 적용.
       별도 ADR 없이 _worldXZ 좌표 변환 레이어 내 처리.
-- [ ] **D5. 피아노롤 상시 코너 오버레이 옵션**: 레퍼런스는 좌하단 작은 2D 롤을 상시 표시(토글 아님).
-      현재 C3은 상단 패널 토글. → 3D 위에 작은 코너 오버레이로 띄우는 표시 옵션 추가(소).
+- [x] **D5. 피아노롤 코너 오버레이** ✅ (2026-06-23): `MiniRollOverlay` 클래스를 `pianoroll.js`에
+      추가 — `#mini-roll` 캔버스(220×110, 좌하단 절대좌표)에 반투명 다크 배경 + 성부색 노트 + 적색
+      playhead를 그림. `corner-roll-select`(끄기/켜기) 토글로 canvas display 전환. 상단 패널
+      (PianoRollPanel)과 독립적으로 동작(각자 `load`/`update` 호출). pps=40 고정.
 
 ## 시작 방법 (로컬 기동)
 - `./start.sh`(루트) → 백엔드 :8000 + 프론트 :5173, 로그는 `backend.log`/`frontend.log`. 종료 `./stop.sh`.

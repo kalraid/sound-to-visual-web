@@ -141,3 +141,101 @@ export class PianoRollPanel {
     ctx.closePath();
   }
 }
+
+// D5: 3D 위 좌하단 코너에 고정 표시하는 미니 피아노롤 오버레이.
+// 상단 패널(PianoRollPanel)과 독립 — 항상 on/off 토글로만 제어.
+export class MiniRollOverlay {
+  constructor(canvasId) {
+    this.canvas = document.getElementById(canvasId);
+    this.ctx = this.canvas.getContext("2d");
+    this.pps = 40; // 1초당 픽셀 (고정 — 미니뷰라 줌 불필요)
+    this.position = 0;
+    this.analysis = null;
+    this.midiMin = 48;
+    this.midiMax = 84;
+    this.ready = false;
+    this._initSize();
+    window.addEventListener("resize", () => this._initSize());
+  }
+
+  _initSize() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = this.canvas.offsetWidth || 220;
+    const h = this.canvas.offsetHeight || 110;
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this._w = w; this._h = h;
+  }
+
+  async load(analysis) {
+    this.analysis = analysis;
+    this.position = 0;
+    const rng = analysis.pitchRange || { min: 48, max: 84 };
+    this.midiMin = rng.min - 2;
+    this.midiMax = rng.max + 2;
+    if (this.midiMax - this.midiMin < 12) this.midiMax = this.midiMin + 12;
+    this.ready = true;
+    this._draw();
+  }
+
+  update(position) {
+    if (this.canvas.style.display === "none") return;
+    this.position = position;
+    this._draw();
+  }
+
+  _yFor(midi) {
+    const t = (midi - this.midiMin) / (this.midiMax - this.midiMin);
+    return this._h - t * this._h;
+  }
+
+  _draw() {
+    if (!this.ready) return;
+    const ctx = this.ctx;
+    const W = this._w, H = this._h;
+    if (!W || !H) return;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(8,10,22,0.82)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = "rgba(200,210,255,0.25)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+
+    // 옥타브 그리드
+    ctx.strokeStyle = "rgba(255,255,255,0.07)";
+    for (let m = Math.ceil(this.midiMin / 12) * 12; m <= this.midiMax; m += 12) {
+      const y = Math.round(this._yFor(m)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    const playX = W * 0.25;
+    const t0 = this.position - playX / this.pps;
+    const t1 = t0 + W / this.pps;
+    const rowH = Math.max(2, H / (this.midiMax - this.midiMin) - 0.5);
+
+    let vi = -1;
+    for (const p of (this.analysis.parts || [])) {
+      if (p.isRhythm) continue;
+      vi++;
+      const col = "#" + voiceColorHex(vi).toString(16).padStart(6, "0");
+      for (const n of p.notes) {
+        if (n.midi == null) continue;
+        const ns = n.startSec, ne = n.startSec + Math.max(0.05, n.durSec);
+        if (ne < t0 || ns > t1) continue;
+        const x = (ns - t0) * this.pps;
+        const w = Math.max(1.5, (ne - ns) * this.pps);
+        const y = this._yFor(n.midi) - rowH / 2;
+        ctx.globalAlpha = (this.position >= ns && this.position < ne) ? 1.0 : 0.7;
+        ctx.fillStyle = col;
+        ctx.fillRect(x, y, w, rowH);
+      }
+    }
+    ctx.globalAlpha = 1.0;
+    ctx.strokeStyle = "rgba(220,70,50,0.9)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(playX + 0.5, 0); ctx.lineTo(playX + 0.5, H); ctx.stroke();
+  }
+}
