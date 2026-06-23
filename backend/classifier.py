@@ -20,6 +20,10 @@ _TONAL_TOL = 1            # 토널 응답 허용 오차(반음)
 _TONAL_MIN_RATIO = 0.78   # 토널 일치로 캐논 인정할 최소 비율
 _TONAL_MIN_LAGSEC = 0.3   # 토널 캐논은 실제 시간지연이 있어야(화음 동시발음과 구분)
 
+# 자기 유사도(H1, ADR 0013) — 같은 성부 내 반복 주기 감지
+_SELF_SIM_THRESHOLD = 0.8  # 구조 단위로 인정할 최소 반복 일치율
+_MIN_PERIOD = 4            # 최소 반복 주기(음표 수) — 우연한 짧은 반복 배제
+
 
 def _similarity(a, b, tol: int = 0):
     """두 음정 간격열의 lag 슬라이딩 최대 일치율 (이조 불변).
@@ -160,6 +164,69 @@ def mirror_detail(analysis: dict) -> dict:
                 })
     pairs.sort(key=lambda p: p["similarity"], reverse=True)
     return {"detected": bool(pairs), "confidence": round(best, 3), "pairs": pairs}
+
+
+def _best_period(seq) -> tuple[int, float]:
+    """interval 시퀀스의 자기 유사도 최대 반복 주기 → (period_notes, ratio).
+
+    seq[i] == seq[i+p] 정렬을 찾는다. 충분한 겹침(>= 한 주기)을 가진 후보 중
+    일치율이 가장 높은 p 를 반환. 반복이 없으면 (0, 0.0).
+    """
+    n = len(seq)
+    if n < 2 * _MIN_PERIOD:
+        return 0, 0.0
+    best_p, best_r = 0, 0.0
+    for p in range(_MIN_PERIOD, n // 2 + 1):
+        m = n - p
+        match = sum(1 for i in range(m) if seq[i] == seq[i + p])
+        ratio = match / m
+        if ratio > best_r:
+            best_r, best_p = ratio, p
+    return best_p, best_r
+
+
+def _period_seconds(notes, period_notes: int) -> float:
+    """반복 주기(음표 수)를 실제 시간(초)으로 환산(중앙값, 템포변화 견고)."""
+    diffs = [notes[i + period_notes]["startSec"] - notes[i]["startSec"]
+             for i in range(len(notes) - period_notes)]
+    if not diffs:
+        span = notes[-1]["startSec"] + notes[-1]["durSec"] - notes[0]["startSec"]
+        return round(span, 3)
+    diffs.sort()
+    return round(diffs[len(diffs) // 2], 3)
+
+
+def structural_units(analysis: dict) -> list:
+    """성부별 자기 유사도 → 구조 단위(섬) 목록 (H1, ADR 0013).
+
+    같은 성부 내에서 음정열이 period 음표마다 반복되면(일치율 >= 임계) 그 성부를
+    period 단위로 분할한다. 같은 반복 패턴의 모든 인스턴스는 동일 unitId 를 공유한다.
+    각 항목: {part, unitId, startSec, endSec, period}. period 는 한 반복의 길이(초).
+    반복이 없는 성부는 단위를 만들지 않는다(빈 목록은 10초 균등 분할 폴백).
+    """
+    seqs, idxs = _seqs_and_idx(analysis)
+    parts = analysis["parts"]
+    units = []
+    uid = 0
+    for seq, pidx in zip(seqs, idxs):
+        period_notes, ratio = _best_period(seq)
+        if period_notes == 0 or ratio < _SELF_SIM_THRESHOLD:
+            continue
+        notes = parts[pidx]["notes"]
+        period_sec = _period_seconds(notes, period_notes)
+        for start in range(0, len(notes), period_notes):
+            seg = notes[start:start + period_notes]
+            if not seg:
+                continue
+            units.append({
+                "part": pidx,
+                "unitId": uid,
+                "startSec": round(seg[0]["startSec"], 3),
+                "endSec": round(seg[-1]["startSec"] + seg[-1]["durSec"], 3),
+                "period": period_sec,
+            })
+        uid += 1
+    return units
 
 
 def classify(analysis: dict, canon: dict | None = None) -> dict:

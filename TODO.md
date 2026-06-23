@@ -134,9 +134,14 @@
 
 ## Phase H — 공유 섬 + 순환 횡단 (ADR 0013, 영상1 핵심 — ADR 0014 우선)
 
-- [ ] **H1. 자기 유사도 분석 (backend)** — 음정열(interval sequence) 기반 self-similarity 분석.
-      같은 성부 내 구간 쌍을 비교해 구조 단위(structural unit) 감지, 임계값 0.8.
-      분석 JSON에 `structuralUnits: [{startSec, endSec, unitId, period}]` 추가.
+- [x] **H1. 자기 유사도 분석 (backend)** ✅ (2026-06-23): `classifier.structural_units()` 추가 —
+      `_best_period()`로 성부별 음정열 자기상관(seq[i]==seq[i+p]) 최대 반복 주기 감지(임계 0.8,
+      최소 4음 `_MIN_PERIOD`). `_period_seconds()`로 주기(음표수)→초 환산(중앙값). 성부를 주기
+      단위로 분할, 같은 반복 패턴은 동일 unitId 공유. `analysis.structuralUnits: [{part, unitId,
+      startSec, endSec, period}]` 노출(`app._build_result`, `_intervalSequences` pop 이전 호출).
+      반복 없는 성부/곡은 빈 목록 → H2에서 10초 균등 분할 폴백. 백엔드 5 테스트 통과
+      (`test_structural_units_schema` 추가). 합성 검증: 4음×4반복 → period 4(ratio 1.0)·2.0s·unitId 공유.
+      ⚠️ 기존 캐시(`backend/cache/*.json`)엔 structuralUnits 없음 → H2 검증 시 캐시 삭제(F3 참조).
 - [ ] **H2. 순환 섬 렌더링** — 캐논 성부들이 하나의 shared terrain(leader notes)을 공유.
       큐브 x 좌표: `((t - voiceStart) % period) * X_PER_SEC`. 초기 period = lagSec.
       후행 성부의 독립 terrain 제거, 모든 캐논 큐브를 leader laneZ로 통일. C2 대체.
