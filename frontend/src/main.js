@@ -67,6 +67,7 @@ $("style-select").addEventListener("change", (e) => terrain.setRenderStyle(e.tar
 $("track-select").addEventListener("change", (e) => terrain.setTrackWidth(e.target.value));
 $("stage-select").addEventListener("change", (e) => terrain.setStage(e.target.value));
 $("canon-select").addEventListener("change", (e) => terrain.setCanonEmphasis(e.target.value === "on"));
+$("share-select").addEventListener("change", (e) => terrain.setSharedTerrain(e.target.value));
 $("mirror-select").addEventListener("change", (e) => terrain.setMirrorEmphasis(e.target.value === "on"));
 $("lane-sep-select").addEventListener("change", (e) => terrain.setLaneSep(e.target.value));
 $("chord-select").addEventListener("change", (e) => terrain.setChordDetail(e.target.value));
@@ -127,6 +128,7 @@ async function uploadFile(file) {
   terrain.trackWidth = $("track-select").value;
   terrain.stageMode = $("stage-select").value;
   terrain.canonEmphasis = $("canon-select").value === "on";
+  terrain.sharedTerrain = $("share-select").value;
   terrain.mirrorEmphasis = $("mirror-select").value === "on";
   terrain.laneSep = $("lane-sep-select").value;
   terrain.chordDetail = $("chord-select").value;

@@ -65,6 +65,9 @@ export class Terrain {
     // 캐논 강조 — 시차 추격 (ADR 0012 / C2). 캐논 분류 시에만 동작하는 가산 레이어.
     this.canonEmphasis = true;    // grill 확정: 기본 켜짐. 비캐논이면 자동 무효.
     this.canon = null;            // analysis.canon (load 시 보관)
+    // H2a 캐논 공유 지형 (ADR 0013): 후행 성부의 독립 지형을 숨기고 선행 지형을 공유.
+    this.sharedTerrain = "off";   // off(기존) | on(캐논 후행 지형 숨김)
+    this.structuralUnits = [];    // analysis.structuralUnits (H1, 현재는 보관만)
     // 거울 대칭 강조 — 역행/전위 (C4). 검은 거울상 구조를 보조 표시. scroll 모드에서만.
     this.mirrorEmphasis = true;
     this.mirror = null;           // analysis.mirror (load 시 보관)
@@ -194,7 +197,21 @@ export class Terrain {
   // ③ 디오라마: 지오메트리/레이아웃 박힘 → 재빌드
   setStage(v) { this.stageMode = v; this._rebuild(); }
   // C2 시차 추격: 마커 위치만 바꾸므로 재빌드 불필요(update가 매 프레임 읽음).
-  setCanonEmphasis(on) { this.canonEmphasis = on; }
+  setCanonEmphasis(on) { this.canonEmphasis = on; this._applySharedTerrain(); }
+  // H2a 공유 지형: 가시성만 토글 → 재빌드 불필요.
+  setSharedTerrain(v) { this.sharedTerrain = v; this._applySharedTerrain(); }
+  // 후행(chase) 성부의 독립 지형/기둥/도트를 숨겨 선행 성부 지형을 '공유'하게 한다.
+  // 큐브는 C2(_buildChaseMap + update)로 이미 선행 레인을 주행하므로 가시성만 끈다.
+  // 공유 off거나 추격강조 off거나 비캐논이면 전부 원상복구.
+  _applySharedTerrain() {
+    const share = this.sharedTerrain === "on" && this.canonEmphasis;
+    for (const v of this.voices) {
+      const vis = !(share && !!v.chase); // chase 있으면 후행 성부 → 숨김
+      if (v.terrain) v.terrain.visible = vis;
+      if (v.pillars) v.pillars.visible = vis;
+      if (v.chordDots) v.chordDots.visible = vis;
+    }
+  }
   // C4 거울 대칭: 고스트 지형 재구성.
   setMirrorEmphasis(on) { this.mirrorEmphasis = on; this._buildMirror(); }
   // D1: 레인 분리 + 화음 표시 — 지오메트리 박힘 → 재빌드
@@ -385,9 +402,11 @@ export class Terrain {
     this._laneCount = this.voices.length;
     this.canon = analysis.canon || null;
     this.mirror = analysis.mirror || null;
+    this.structuralUnits = analysis.structuralUnits || [];
     this._buildChaseMap();
     this.applyRenderStyle(); // 재빌드 후 렌더 스타일 + 디오라마 무대 재적용
     this._buildMirror();     // C4 거울상 고스트(applyRenderStyle 뒤: 베이스 지형 머티리얼 확정 후)
+    this._applySharedTerrain(); // H2a: 공유 지형(후행 지형 숨김) — chase 맵 확정 후
   }
 
   // C4+D2: 역행/전위로 감지된 거울 대칭쌍 → 베이스 성부 지형을 바닥 아래로 뒤집은

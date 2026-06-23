@@ -142,9 +142,16 @@
       반복 없는 성부/곡은 빈 목록 → H2에서 10초 균등 분할 폴백. 백엔드 5 테스트 통과
       (`test_structural_units_schema` 추가). 합성 검증: 4음×4반복 → period 4(ratio 1.0)·2.0s·unitId 공유.
       ⚠️ 기존 캐시(`backend/cache/*.json`)엔 structuralUnits 없음 → H2 검증 시 캐시 삭제(F3 참조).
-- [ ] **H2. 순환 섬 렌더링** — 캐논 성부들이 하나의 shared terrain(leader notes)을 공유.
-      큐브 x 좌표: `((t - voiceStart) % period) * X_PER_SEC`. 초기 period = lagSec.
-      후행 성부의 독립 terrain 제거, 모든 캐논 큐브를 leader laneZ로 통일. C2 대체.
+- [~] **H2. 순환 섬 렌더링** (H2a 완료 / H2b 보류)
+  - [x] **H2a. 공유 지형** ✅ (2026-06-23): `share-select`(끄기/켜기) 토글 추가 —
+        캐논+추격강조 켜짐일 때 후행(chase) 성부의 독립 terrain·pillars·chordDots 를
+        `visible=false`로 숨겨 선행 성부 지형을 '공유'(큐브는 C2로 이미 선행 레인 주행).
+        `_applySharedTerrain()`(가시성만, 재빌드 X), load·setCanonEmphasis·setSharedTerrain에서 호출.
+        비캐논/추격off/공유off면 전부 복구. Playwright 수치 검증(`e2e/shared-terrain.spec.js`):
+        off=전부 보임, on=후행만 숨김(terrainVisible===!chase), 복구·콘솔무에러 확인.
+  - [ ] **H2b. 순환 횡단 + 섬 단위 지형 재빌드** (보류) — 큐브 x=`((t-voiceStart)%period)*X_PER_SEC`.
+        곡 전체 길이 지형을 섬 단위로 재빌드해야 순환이 자연스러움(분량 큼). period 실데이터
+        (structuralUnit) 약해 검증 어려움 → H1 임계 완화 또는 실 캐논곡 샘플 확보 후 진행.
 - [ ] **H3. Z 유사도 배치** — 음악적 유사도 → Z 거리 레이아웃.
       캐논=Z 완전 공유, 화음=좁은 클러스터(gap≈1.5), 무관=넓은 분리(LANE_GAP 유지).
 - [ ] **H4. 구간 재방문 (A-B-A)** — 비캐논 형식 재방문은 복사본 방식.
