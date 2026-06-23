@@ -9,6 +9,7 @@ import { voiceColorHex } from "./colors.js";
 const X_PER_SEC = 6;
 const Y_HEIGHT = 10;
 const LANE_GAP = 8;
+const LANE_GAP_SPREAD = 14; // D1: spread 모드 레인 간격
 const CUBE = 1.0;
 const LANE_THICK = 2.4; // 지형 z 두께
 const RAIL = 0.12;      // 쉼표(음이 끝난 뒤 다음 음 전까지) 얇은 선 높이
@@ -65,6 +66,9 @@ export class Terrain {
     // 거울 대칭 강조 — 역행/전위 (C4). 검은 거울상 구조를 보조 표시. scroll 모드에서만.
     this.mirrorEmphasis = true;
     this.mirror = null;           // analysis.mirror (load 시 보관)
+    // D1: 성부 경로 분리 + 화음 개별 표시
+    this.laneSep = "tight";       // tight(기존 LANE_GAP=8) | spread(14)
+    this.chordDetail = "merged";  // merged(기존) | individual(화음음 개별 구체)
     this._lastAnalysis = null;
     this._lastMaxVoices = 0;
 
@@ -186,6 +190,10 @@ export class Terrain {
   setCanonEmphasis(on) { this.canonEmphasis = on; }
   // C4 거울 대칭: 고스트 지형 재구성.
   setMirrorEmphasis(on) { this.mirrorEmphasis = on; this._buildMirror(); }
+  // D1: 레인 분리 + 화음 표시 — 지오메트리 박힘 → 재빌드
+  setLaneSep(v) { this.laneSep = v; this._rebuild(); }
+  setChordDetail(v) { this.chordDetail = v; this._rebuild(); }
+  _laneGap() { return this.laneSep === "spread" ? LANE_GAP_SPREAD : LANE_GAP; }
 
   // ---------- ③ 디오라마 레이아웃 ----------
   _computeDiorama() {
@@ -234,7 +242,7 @@ export class Terrain {
     if (this.stageMode !== "diorama" || !this.diorama) return;
     const L = this.diorama;
     const matte = this.renderStyle === "matte";
-    const laneSpan = Math.max(LANE_GAP, (this._laneCount - 1) * LANE_GAP);
+    const laneSpan = Math.max(this._laneGap(), (this._laneCount - 1) * this._laneGap());
     const plateMat = new THREE.MeshStandardMaterial({
       color: matte ? 0xcfcfcf : 0x39435f, roughness: matte ? 0.95 : 0.6,
       metalness: matte ? 0.0 : 0.2,
@@ -311,6 +319,7 @@ export class Terrain {
       v.terrain && v.terrain.geometry.dispose();
       v.cube && this.scene.remove(v.cube);
       v.pillars && this.scene.remove(v.pillars);
+      v.chordDots && this.scene.remove(v.chordDots);
     }
     for (const p of this.particles) this.scene.remove(p.mesh);
     this.voices = []; this.particles = [];
@@ -463,7 +472,7 @@ export class Terrain {
   }
 
   _buildVoice(part, laneIndex, isRhythm) {
-    const laneZ = -laneIndex * LANE_GAP;
+    const laneZ = -laneIndex * this._laneGap();
     const color = voiceColorHex(part.index);
     const { xs, ys } = this.terrainShape === "stepped"
       ? this._steppedHeights(part.notes, isRhythm)
@@ -543,8 +552,38 @@ export class Terrain {
       }
     }
 
+    // D1 화음 개별 마커: 음표마다 화음 구성음 각각을 작은 구체로 표시.
+    let chordDots = null;
+    if (!isRhythm && this.chordDetail === "individual") {
+      const dotData = [];
+      for (const n of part.notes) {
+        const midis = n.chordMidis && n.chordMidis.length > 1 ? n.chordMidis : [n.midi];
+        const tMid = n.startSec + (n.durSec || 0.1) / 2;
+        for (const midi of midis) {
+          dotData.push({ t: tMid, y: Math.max(RAIL, this.yFor(midi)) });
+        }
+      }
+      if (dotData.length) {
+        chordDots = new THREE.InstancedMesh(
+          new THREE.SphereGeometry(0.22, 6, 4),
+          new THREE.MeshStandardMaterial({
+            color, emissive: new THREE.Color(color).multiplyScalar(0.55), roughness: 0.2,
+          }),
+          dotData.length
+        );
+        const mx = new THREE.Matrix4();
+        dotData.forEach((d, idx) => {
+          const p = dioOn ? this._worldXZ(d.t, laneZ) : { wx: d.t * X_PER_SEC, wz: laneZ };
+          mx.setPosition(p.wx, d.y + 0.22, p.wz);
+          chordDots.setMatrixAt(idx, mx);
+        });
+        chordDots.instanceMatrix.needsUpdate = true;
+        this.scene.add(chordDots);
+      }
+    }
+
     this.voices.push({
-      partIndex: part.index, notes: part.notes, laneZ, terrain, cube, pillars,
+      partIndex: part.index, notes: part.notes, laneZ, terrain, cube, pillars, chordDots,
       mat: cubeMat, color, isRhythm, flash: 0,
     });
   }
@@ -622,7 +661,7 @@ export class Terrain {
     }
     const x = position * X_PER_SEC;
     const main = this._mainVoice ? this._mainVoice.cube.position : new THREE.Vector3(x, 5, 0);
-    const midZ = -((this._laneCount - 1) * LANE_GAP) / 2;
+    const midZ = -((this._laneCount - 1) * this._laneGap()) / 2;
     let desired, look;
     if (this.cameraMode === "chase") {
       desired = new THREE.Vector3(x - 14, main.y + 6, this._mainVoice ? this._mainVoice.laneZ + 10 : 12);
