@@ -126,7 +126,7 @@
 > - 프리셋 버튼 위치: 툴바 맨 앞(파일 열기 옆). 접기 UI: 그룹명 클릭(▶/▼ 인라인 힌트).
 > - E4: load() 시 스네이크 배치 범위로 동적 재계산. E5: `_ribbonZ(t - lagSec, leaderLane)` 적용.
 
-- [ ] **E1. 레퍼런스 모드 프리셋 버튼** — "레퍼런스" 원클릭 = stepped+matte+narrow+spread+diorama 일괄 적용. "기존" 버튼 = 전체 토글 초기화. R키 단축키 포함(E3 흡수).
+- [x] **E1. 레퍼런스 모드 프리셋 버튼** ✅ (2026-06-24): 툴바 맨 앞 "🎬 레퍼런스" / "↺ 기존" 버튼. PRESET_REF(stepped+matte+narrow+diorama+spread), PRESET_ORIG(전체 기본값). `applyPreset()`이 각 select에 change 이벤트 dispatch 후 terrain.load() 재빌드. R키: shape-select 값으로 현재 프리셋 판별 후 토글.
 - [ ] **E2. 툴바 그룹화** — 16개 컨트롤을 [시각]/[성부]/[무대]/[악보] 4묶음으로 접기 가능하게. 그룹명 클릭으로 토글(▶/▼ 인라인). 분류·최대성부·파일열기·프리셋 버튼은 항상 노출.
 - [x] **E3. 키보드 단축키** ✅ (2026-06-24): Space=재생/정지, ←/→=±5초. `keydown` 리스너, input/select 포커스 시 무시. R키는 E1에 통합.
 - [x] **E4. 그리드 바닥 확장** ✅ (2026-06-24): `_rebuildGrid()` — `load()` 끝에 호출, 스크롤 모드는 `duration×X_PER_SEC+margin`, 디오라마 모드는 `cols×pitch × rows×pitchZ+laneSpread+margin`으로 동적 재계산. `userData.isGrid/isFloor`로 태깅 후 기존 mesh 제거 후 재생성.

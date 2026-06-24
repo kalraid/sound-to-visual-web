@@ -22,6 +22,39 @@ let maxVoices = 4;
 let prevPos = 0;
 
 // --- UI 배선 ---
+// E1: 레퍼런스 모드 프리셋 — 전부 신규값이면 레퍼런스 느낌(ADR 0011).
+const PRESET_REF = {
+  "shape-select": "stepped", "style-select": "matte", "track-select": "narrow",
+  "stage-select": "diorama", "lane-sep-select": "spread",
+  "canon-select": "on", "share-select": "off", "mirror-select": "on",
+  "ribbon-select": "straight", "chord-select": "merged",
+  "bg-select": "grid", "beat-select": "drum",
+  "camera-select": "overhead", "camdir-select": "right",
+  "score-select": "osmd", "corner-roll-select": "off",
+};
+const PRESET_ORIG = {
+  "shape-select": "smooth", "style-select": "glow", "track-select": "wide",
+  "stage-select": "scroll", "lane-sep-select": "tight",
+  "canon-select": "on", "share-select": "off", "mirror-select": "on",
+  "ribbon-select": "straight", "chord-select": "merged",
+  "bg-select": "grid", "beat-select": "drum",
+  "camera-select": "overhead", "camdir-select": "right",
+  "score-select": "osmd", "corner-roll-select": "off",
+};
+
+function applyPreset(preset) {
+  Object.entries(preset).forEach(([id, val]) => {
+    const el = $(id);
+    if (el) el.value = val;
+    // 각 select의 change 이벤트를 직접 dispatch해 terrain setter 연동
+    el && el.dispatchEvent(new Event("change"));
+  });
+  if (analysis) terrain.load(analysis, maxVoices);
+}
+
+$("preset-ref-btn").addEventListener("click", () => applyPreset(PRESET_REF));
+$("preset-orig-btn").addEventListener("click", () => applyPreset(PRESET_ORIG));
+
 $("open-btn").addEventListener("click", () => $("file-input").click());
 $("file-input").addEventListener("change", (e) => {
   if (e.target.files[0]) uploadFile(e.target.files[0]);
@@ -176,6 +209,11 @@ document.addEventListener("keydown", async (e) => {
   } else if (e.code === "ArrowRight") {
     e.preventDefault();
     audio.seek(Math.min(audio.duration, audio.position + 5));
+  } else if (e.code === "KeyR") {
+    e.preventDefault();
+    // 현재 레퍼런스 프리셋이면 기존으로, 아니면 레퍼런스로 토글
+    const isRef = $("shape-select").value === "stepped";
+    applyPreset(isRef ? PRESET_ORIG : PRESET_REF);
   }
 });
 
