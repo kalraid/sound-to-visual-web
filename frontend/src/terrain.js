@@ -90,6 +90,7 @@ export class Terrain {
     this.pathMode = "straight";   // straight | coaster
     this.helixRot = 0;            // I3: 나선 전역 회전각(라디안, lap 구동)
     this.lapSec = 8;              // I3: 한 바퀴(lap) 시간 — load 시 코드주기/마디로 계산
+    this._crossState = {};        // I5: 성부쌍 교차 근접 상태(이벤트 에지 감지용)
     this._lastAnalysis = null;
     this._lastMaxVoices = 0;
     // D3: 섹션 전환 추적 (카메라 호핑 + HUD)
@@ -620,6 +621,7 @@ export class Terrain {
     }
     for (const p of this.particles) this.scene.remove(p.mesh);
     this.voices = []; this.particles = [];
+    this._crossState = {}; // I5: 이전 곡의 교차 상태 제거
   }
 
   load(analysis, maxVoices) {
@@ -1018,6 +1020,44 @@ export class Terrain {
     }
   }
 
+  // I5: 교차점 스파크 — 두 성부가 같은 음(같은 나선 점)에 만나는 순간 흰 불꽃을 터뜨린다.
+  _spawnSparkAt(pos, color) {
+    const geo = new THREE.SphereGeometry(0.18, 6, 6);
+    for (let i = 0; i < 12; i++) {
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color }));
+      m.position.copy(pos);
+      const vel = new THREE.Vector3(
+        (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9
+      );
+      this.scene.add(m);
+      this.particles.push({ mesh: m, vel, life: 1 });
+    }
+  }
+
+  // I5: 코스터 모드에서 현재 같은 음을 가진 성부쌍을 찾아 '교차 진입' 순간에만 강조.
+  _detectCrossings() {
+    const TOL = 0.75; // 반음 미만 = 같은 음(같은 점). 옥타브차는 다른 점이라 제외됨.
+    const act = this.voices.filter((v) => !v.isRhythm && v._curMidi != null);
+    const seen = {};
+    for (let i = 0; i < act.length; i++) {
+      for (let j = i + 1; j < act.length; j++) {
+        const a = act[i], b = act[j];
+        const key = a.partIndex < b.partIndex
+          ? `${a.partIndex}_${b.partIndex}` : `${b.partIndex}_${a.partIndex}`;
+        const close = Math.abs(a._curMidi - b._curMidi) <= TOL;
+        seen[key] = true;
+        if (close && !this._crossState[key]) {
+          // 교차 진입(rising edge): 스파크 + 양쪽 큐브 플래시
+          this._spawnSparkAt(a.cube.position, 0xffffff);
+          a.flash = 1; b.flash = 1;
+        }
+        this._crossState[key] = close;
+      }
+    }
+    // 더 이상 비교되지 않는 쌍의 상태는 정리
+    for (const k of Object.keys(this._crossState)) if (!seen[k]) delete this._crossState[k];
+  }
+
   update(position, dt) {
     // D3: 스크롤 모드 전환 시 섹션 HUD 숨김
     const hud = document.getElementById("section-hud");
@@ -1045,6 +1085,7 @@ export class Terrain {
         // I2: 공유 피치 나선 위를 주행. 같은 음이면 같은 점 → 교차. helixRot로 전역 회전.
         const midi = this._pitchAtTime(notesForY, t);
         const h = this.helixRot || 0, cs = Math.cos(h), sn = Math.sin(h);
+        v._curMidi = midi; // I5: 교차 감지용
         if (midi == null) {
           v.cube.position.set(0, HELIX_Y0 + v.laneIndex * 1.2, 0); // 리듬/무음 → 중심축
         } else {
@@ -1061,6 +1102,9 @@ export class Terrain {
         v.cube.scale.setScalar(1 + v.flash * 0.7);
       }
     }
+    if (this.pathMode === "coaster") this._detectCrossings(); // I5: 교차 강조
+
+
 
     for (const p of this.particles) {
       p.life -= dt * 1.5; p.vel.y -= dt * 9;
