@@ -72,6 +72,7 @@ stage.addEventListener("drop", (e) => {
 
 $("play-btn").addEventListener("click", async () => {
   if (!analysis) return;
+  terrain.clearThemeOpening(); // G3: 재생 시작 시 주제 오프닝 제거
   await audio.ensureStarted();
   audio.toggle();
   $("play-btn").textContent = audio.playing ? "⏸ 일시정지" : "▶︎ 재생";
@@ -182,6 +183,7 @@ async function uploadFile(file) {
   prevPos = 0;
   $("play-btn").textContent = "▶︎ 재생";
   setStatus(`${file.name} — 성부 ${analysis.parts.length}개, ${fmt(analysis.durationSec)}`);
+  terrain.buildThemeOpening(); // G3: 주제 큐브 오프닝
 }
 
 function showCategory(cat) {

@@ -94,6 +94,9 @@ export class Terrain {
     this.cornerGroup = new THREE.Group(); // G2 직교 3평면 반사
     this.scene.add(this.cornerGroup);
     this.cornerReflect = false;
+    this.themeGroup = new THREE.Group(); // G3 주제 타이틀 오프닝
+    this.scene.add(this.themeGroup);
+    this.showingTheme = false;
 
     this._resize = this._resize.bind(this);
     window.addEventListener("resize", this._resize);
@@ -1002,6 +1005,57 @@ export class Terrain {
     }
     this.camera.position.lerp(desired, 0.08);
     this.camera.lookAt(look);
+  }
+
+  // G3: 첫 N음을 'A B C D …' 라벨 큐브 한 줄로 제시 — 분석 직후 표시, 재생 시 제거.
+  buildThemeOpening() {
+    this.clearThemeOpening();
+    if (!this._lastAnalysis) return;
+    const mainPart = this._lastAnalysis.parts.find((p) => !p.isRhythm);
+    if (!mainPart) return;
+    const notes = mainPart.notes.filter((n) => n.midi != null).slice(0, 8);
+    if (!notes.length) return;
+
+    const matte = this.renderStyle === "matte";
+    const SPACING = 14;
+    const totalW = (notes.length - 1) * SPACING;
+    const startX = -(totalW + 30); // 곡 시작(x=0) 왼쪽에 배치
+    const labels = "ABCDEFGH";
+    const pMin = this._lastAnalysis.pitchRange?.min ?? 48;
+    const pMax = this._lastAnalysis.pitchRange?.max ?? 84;
+    const pSpan = Math.max(1, pMax - pMin);
+
+    notes.forEach((n, i) => {
+      const col = new THREE.Color(voiceColorHex(0));
+      const h = Math.max(2, ((n.midi - pMin) / pSpan) * Y_HEIGHT + 1);
+      const mat = new THREE.MeshStandardMaterial({
+        color: matte ? 0xdddddd : col,
+        emissive: matte ? 0x000000 : col,
+        emissiveIntensity: matte ? 0 : 0.25,
+        roughness: matte ? 0.9 : 0.5, metalness: matte ? 0 : 0.2,
+      });
+      const cube = new THREE.Mesh(new THREE.BoxGeometry(CUBE * 2.5, h, CUBE * 2.5), mat);
+      cube.position.set(startX + i * SPACING, h / 2, 0);
+      this.themeGroup.add(cube);
+      const spr = this._makeTextSprite(labels[i] || String(i + 1), matte ? "#222" : "#c8d0ff");
+      spr.position.set(startX + i * SPACING, h + 5, 0);
+      this.themeGroup.add(spr);
+    });
+    this.showingTheme = true;
+    // 카메라를 주제 행 정면으로 맞춤
+    const cx = startX + totalW / 2;
+    this.camera.position.set(cx, 22, 55);
+    this.camera.lookAt(cx, 5, 0);
+  }
+
+  clearThemeOpening() {
+    while (this.themeGroup.children.length) {
+      const c = this.themeGroup.children.pop();
+      c.geometry?.dispose();
+      c.material?.dispose();
+      this.themeGroup.remove(c);
+    }
+    this.showingTheme = false;
   }
 
   renderStatic() { this.composer.render(); }
