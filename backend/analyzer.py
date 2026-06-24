@@ -108,6 +108,29 @@ def _interval_sequence(notes):
     return seq
 
 
+def _extract_measures(score) -> list:
+    """마디 경계 시간(초) 추출 — 첫 음정 성부 기준, 템포 변화 반영."""
+    from music21 import stream as m21stream
+    for part in score.parts:
+        if _is_rhythm_part(part):
+            continue
+        result, seen = [], set()
+        for entry in part.secondsMap:
+            el = entry["element"]
+            if isinstance(el, m21stream.Measure):
+                num = int(el.number) if el.number else len(result) + 1
+                if num in seen:
+                    continue
+                seen.add(num)
+                result.append({
+                    "number": num,
+                    "startSec": round(float(entry["offsetSeconds"]), 3),
+                })
+        if result:
+            return sorted(result, key=lambda x: x["startSec"])
+    return []
+
+
 def analyze_score(path: str) -> dict:
     score = converter.parse(path)
     parts = list(score.parts) if score.parts else [score]
@@ -168,6 +191,7 @@ def analyze_score(path: str) -> dict:
         "durationSec": round(total_dur, 3),
         "pitchRange": {"min": int(pmin), "max": int(pmax)},
         "parts": extracted,
+        "measures": _extract_measures(score),  # F1: 마디 경계 [{number, startSec}]
         "_intervalSequences": [
             _interval_sequence(e["notes"]) for e in extracted if not e["isRhythm"]
         ],

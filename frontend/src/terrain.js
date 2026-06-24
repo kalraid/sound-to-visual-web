@@ -258,7 +258,14 @@ export class Terrain {
 
   // ---------- ③ 디오라마 레이아웃 ----------
   _computeDiorama() {
-    const segDur = DIO_SEG_DUR;
+    let segDur = DIO_SEG_DUR;
+    // F1: 마디 경계 데이터가 있으면 마디 그룹 단위로 자동 교체 (토글 없음).
+    const measures = this._lastAnalysis?.measures;
+    if (measures?.length > 1 && this.duration > 0) {
+      const avgMeasureDur = this.duration / measures.length;
+      const measuresPerSeg = Math.max(1, Math.round(DIO_SEG_DUR / avgMeasureDur));
+      segDur = measuresPerSeg * avgMeasureDur;
+    }
     const nSegs = Math.max(1, Math.ceil((this.duration || segDur) / segDur));
     const cols = Math.max(1, Math.ceil(Math.sqrt(nSegs)));
     this.diorama = { segDur, nSegs, cols, cell: DIO_CELL, pitch: DIO_CELL + DIO_GAP, pitchZ: DIO_CELL + DIO_GAP };

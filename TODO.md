@@ -134,7 +134,7 @@
 
 ## Phase F — 백엔드 개선 (중기)
 
-- [ ] **F1. 마디(measure) 경계 추출** — music21 `part.measure(n)` 시간 정보를 분석 JSON 노출 → D3 구간 분할을 10초 균등 대신 마디 그룹 단위로 자동 교체(토글 없음, 데이터 있으면 항상 사용).
+- [x] **F1. 마디(measure) 경계 추출** ✅ (2026-06-24): `_extract_measures()` — `part.secondsMap`에서 Measure 객체 추출, `analysis.measures: [{number, startSec}]` 노출. `_computeDiorama()`에서 measures 있으면 `avgMeasureDur × measuresPerSeg`로 segDur 자동 교체(토글 없음). 검증: pachelbel_canon 16마디(4s), bwv66 9마디(2.5s). 백엔드 5테스트 통과.
 - [ ] **F2. 성부명 표시** — `part.name`을 툴바·피아노롤에 표시(현재 색으로만 구분).
 - [ ] **F3. 캐시 무효화** — 분석 결과에 버전 해시 부착, 파이프라인 변경 시 자동 무효.
 
