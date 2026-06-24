@@ -311,6 +311,28 @@ export class Terrain {
     return { x: wx, z: baseZ };
   }
 
+  // G1: 섬별 음표 밀도 + 음역 계산 → 3 형태 분류
+  _computeSegStats() {
+    const L = this.diorama;
+    const parts = this._lastAnalysis?.parts || [];
+    const stats = Array.from({ length: L.nSegs }, () => ({ count: 0, minM: 127, maxM: 0 }));
+    for (const p of parts) {
+      if (p.isRhythm) continue;
+      for (const n of p.notes) {
+        if (n.midi == null) continue;
+        const si = Math.min(L.nSegs - 1, Math.floor(n.startSec / L.segDur));
+        stats[si].count++;
+        if (n.midi < stats[si].minM) stats[si].minM = n.midi;
+        if (n.midi > stats[si].maxM) stats[si].maxM = n.midi;
+      }
+    }
+    const maxCount = Math.max(1, ...stats.map((s) => s.count));
+    return stats.map((s) => ({
+      density: s.count / maxCount,
+      pitchRange: s.count > 0 ? s.maxM - s.minM : 0,
+    }));
+  }
+
   _buildDioramaStage() {
     // 기존 무대 오브젝트 제거
     while (this.stageGroup.children.length) {
@@ -332,13 +354,26 @@ export class Terrain {
       color: matte ? 0xe6e6e6 : 0x556089, roughness: matte ? 0.95 : 0.5, metalness: 0.0,
       emissive: matte ? 0x000000 : 0x1a2030,
     });
-    // 섬 플레이트
+    const segStats = this._computeSegStats();
+    const depth = Math.max(8, laneSpan + LANE_GAP);
+    // 섬 플레이트 — G1: 밀도·음역으로 형태 결정
     for (let s = 0; s < L.nSegs; s++) {
       const { baseX, baseZ } = this._cellBase(s);
-      const depth = laneSpan + LANE_GAP;
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(L.cell + 4, 1.2, depth), plateMat);
-      plate.position.set(baseX + L.cell / 2, -0.8, baseZ - laneSpan / 2);
-      this.stageGroup.add(plate);
+      const cx = baseX + L.cell / 2;
+      const cz = baseZ - laneSpan / 2;
+      const { density, pitchRange } = segStats[s];
+      if (density > 0.65 && pitchRange > 12) {
+        // 막대숲(pillar forest): 음표가 많고 음역이 넓음
+        this._addSegPillars(cx, cz, L.cell, depth, density, matte);
+      } else if (density > 0.3) {
+        // 계단(steps): 중간 밀도
+        this._addSegSteps(cx, cz, L.cell, depth, matte, plateMat);
+      } else {
+        // 슬래브(slab): 음표 희소
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(L.cell + 4, 1.2, depth), plateMat);
+        plate.position.set(cx, -0.8, cz);
+        this.stageGroup.add(plate);
+      }
     }
     // 섬 사이 연결로
     for (let s = 0; s + 1 < L.nSegs; s++) {
@@ -360,6 +395,50 @@ export class Terrain {
       this.stageGroup.add(spr);
     }
     this._lastSeg = -1; // 재빌드 시 hop 기준 초기화
+  }
+
+  // G1: 막대숲 — 5×3 기둥 배열, 높이는 density 비례
+  _addSegPillars(cx, cz, cellW, depth, density, matte) {
+    const cols = 5, rows = 3;
+    const pW = cellW / (cols * 2.2);
+    const pD = depth / (rows * 2.5);
+    const maxH = 3.5 + density * 4;
+    const mat = new THREE.MeshStandardMaterial({
+      color: matte ? 0xb0b8c8 : 0x5560a0,
+      roughness: matte ? 0.9 : 0.5, metalness: matte ? 0.0 : 0.35,
+      emissive: matte ? 0x000000 : 0x0a1030,
+    });
+    const baseMat = new THREE.MeshStandardMaterial({
+      color: matte ? 0xd0d4dc : 0x39435f, roughness: 0.8, metalness: 0.1
+    });
+    // 바닥 슬래브
+    const base = new THREE.Mesh(new THREE.BoxGeometry(cellW + 4, 0.6, depth), baseMat);
+    base.position.set(cx, -0.6, cz);
+    this.stageGroup.add(base);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const h = maxH * (0.4 + Math.sin(r * 1.7 + c * 0.9) * 0.3 + density * 0.3);
+        const px = cx - cellW / 2 + (c + 0.7) * (cellW / (cols + 0.4));
+        const pz = cz - depth / 2 + (r + 0.7) * (depth / (rows + 0.4));
+        const pillar = new THREE.Mesh(new THREE.BoxGeometry(pW, h, pD), mat);
+        pillar.position.set(px, h / 2 - 0.3, pz);
+        this.stageGroup.add(pillar);
+      }
+    }
+  }
+
+  // G1: 계단 — x 방향으로 4단 점층 상승
+  _addSegSteps(cx, cz, cellW, depth, matte, plateMat) {
+    const steps = 4;
+    const sw = cellW / steps;
+    const mat = plateMat; // 재질 공유
+    for (let i = 0; i < steps; i++) {
+      const h = 0.6 + i * 0.7;
+      const ox = cx - cellW / 2 + (i + 0.5) * sw;
+      const step = new THREE.Mesh(new THREE.BoxGeometry(sw - 0.4, h, depth), mat);
+      step.position.set(ox, h / 2 - 0.3, cz);
+      this.stageGroup.add(step);
+    }
   }
 
   // D3: 섹션 번호를 캔버스 텍스처로 그린 스프라이트 반환
