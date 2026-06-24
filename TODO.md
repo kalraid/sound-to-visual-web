@@ -148,27 +148,16 @@
       반복 없는 성부/곡은 빈 목록 → H2에서 10초 균등 분할 폴백. 백엔드 5 테스트 통과
       (`test_structural_units_schema` 추가). 합성 검증: 4음×4반복 → period 4(ratio 1.0)·2.0s·unitId 공유.
       ⚠️ 기존 캐시(`backend/cache/*.json`)엔 structuralUnits 없음 → H2 검증 시 캐시 삭제(F3 참조).
-- [~] **H2. 순환 섬 렌더링** (H2a 완료 / H2b 보류)
+- [~] **H2. 순환 섬 렌더링** (H2a 완료 / H2b → 마지막 단계로 이동)
   - [x] **H2a. 공유 지형** ✅ (2026-06-23): `share-select`(끄기/켜기) 토글 추가 —
         캐논+추격강조 켜짐일 때 후행(chase) 성부의 독립 terrain·pillars·chordDots 를
         `visible=false`로 숨겨 선행 성부 지형을 '공유'(큐브는 C2로 이미 선행 레인 주행).
         `_applySharedTerrain()`(가시성만, 재빌드 X), load·setCanonEmphasis·setSharedTerrain에서 호출.
         비캐논/추격off/공유off면 전부 복구. Playwright 수치 검증(`e2e/shared-terrain.spec.js`):
         off=전부 보임, on=후행만 숨김(terrainVisible===!chase), 복구·콘솔무에러 확인.
-  - [ ] **H2b. 순환 횡단 + 섬 단위 지형 재빌드** (보류 해제 가능) — 큐브 x=`((t-voiceStart)%period)*X_PER_SEC`.
-        곡 전체 길이 지형을 섬 단위로 재빌드해야 순환이 자연스러움(분량 큼).
-        **재개 조건 달성** (2026-06-24, `samples/pachelbel_canon.mid` 검증):
-        structuralUnits=8개(bass 성부, period=8.0s). canon.pairs 3쌍 모두 lagSec 정확 감지.
-        ⚠️ 캐논 바이올린 성부는 테마를 1회만 연주 → structuralUnits 없음.
-        **H2b period 소스**: `canon.pairs[*].lagSec`(초기값, ADR 0013 설계 그대로).
-        structuralUnits로의 교체는 bass가 아닌 canon 성부에서 감지될 때만 유효.
 - [ ] **H3. Z 유사도 배치** — 음악적 유사도 → Z 거리 레이아웃.
       캐논=Z 완전 공유, 화음=좁은 클러스터(gap≈1.5), 무관=넓은 분리(LANE_GAP 유지).
       **구현 방식**: 카테고리 일괄 적용(`classify()` 출력 기준). 성부쌍별 동적 계산은 H1 structuralUnits 강화 이후 검토.
-- [ ] **H4. 구간 재방문 (A-B-A)** — 비캐논 형식 재방문은 복사본 방식.
-      H1 `structuralUnits`로 재방문 구간 감지, 카메라가 섬 고정 좌표로 이동.
-- [ ] **H5. 지형 업그레이드 애니메이션** _(선택, 별도 ADR 필요)_ — 변주 재방문 시 terrain morph.
-      H2 완료 후 추가 설계. GPU 버텍스 인터폴레이션 필요.
 
 ## Phase G — 조형 고도화 (장기, Phase H 이후)
 > ADR 0014: 영상1 스타일 우선 확정 → Phase H 완료 후 검토.
@@ -176,6 +165,19 @@
 - [ ] **G1. 섹션별 고유 3D 조형** — 피치 분포·리듬 밀도로 섬마다 다른 형태(미로·막대숲·계단). 현재 슬래브 대체.
 - [ ] **G2. 직교 3평면 반사(No.13 스타일)** — 두 벽+바닥 코너에 흰/검 부조 동시 배치. (영상2 클라이맥스, 낮은 우선순위)
 - [ ] **G3. 주제 타이틀 오프닝** — 영상2 스타일 "A B C D..." 주제 큐브 한 줄 제시 씬. (영상2 스타일, 낮은 우선순위)
+
+## 마지막 단계 — 실 캐논 MIDI 필요 (현재 미확보)
+> 캐논 선율 성부에서 structuralUnits가 감지되는 실제 악보 MIDI 확보 후 진행.
+> (현재 `samples/pachelbel_canon.mid`는 합성본 — bass 성부 only, 캐논 violin 성부 structuralUnits 없음)
+
+- [ ] **H2b. 순환 횡단 + 섬 단위 지형 재빌드** — 큐브 x=`((t-voiceStart)%period)*X_PER_SEC`.
+      곡 전체 길이 지형을 섬 단위로 재빌드해야 순환이 자연스러움(분량 큼).
+      period 소스: `canon.pairs[*].lagSec`. structuralUnits 교체는 캐논 성부 감지 시.
+- [ ] **H4. 구간 재방문 (A-B-A)** — 비캐논 형식 재방문은 복사본 방식.
+      H1 `structuralUnits`로 A-B-A 재방문 구간 감지, 카메라가 섬 고정 좌표로 이동.
+      실 MIDI에서 A-B-A structuralUnits 감지 확인 필요.
+- [ ] **H5. 지형 업그레이드 애니메이션** _(선택, 별도 ADR 필요)_ — 변주 재방문 시 terrain morph.
+      H2b 완료 후 추가 설계. GPU 버텍스 인터폴레이션 필요.
 
 ## 시작 방법 (로컬 기동)
 - `./start.sh`(루트) → 백엔드 :8000 + 프론트 :5173, 로그는 `backend.log`/`frontend.log`. 종료 `./stop.sh`.
