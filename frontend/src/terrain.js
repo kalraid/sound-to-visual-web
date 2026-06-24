@@ -16,6 +16,11 @@ const LANE_GAP_HARMONIC = 2.5; // 화음 → 좁은 군집
 // other → LANE_GAP (8)
 const A_WAVE = 2.5;          // D4: 리본 파동 진폭 (Z 단위)
 const ω_WAVE = (Math.PI * 2) / 30; // D4: 파동 주기 30초 (한 파장)
+// I1: 롤러코스터 주행 — 각 성부 큐브가 자기 나선 궤도를 돌며 전진.
+const COASTER_SPIN = (Math.PI * 2) / 4; // 4초에 한 바퀴(뱅글뱅글)
+const COASTER_R0 = 6;        // 기본 반경
+const COASTER_R1 = 3;        // 반경 맥동 폭(롤러코스터식 부풀음)
+const COASTER_LIFT = 9;      // 지면 위로 띄우는 기본 높이
 const CUBE = 1.0;
 const LANE_THICK = 2.4; // 지형 z 두께
 const RAIL = 0.12;      // 쉼표(음이 끝난 뒤 다음 음 전까지) 얇은 선 높이
@@ -81,6 +86,8 @@ export class Terrain {
     this.chordDetail = "merged";  // merged(기존) | individual(화음음 개별 구체)
     // D4: 리본 파동 경로
     this.ribbonMode = "straight"; // straight(기존) | wave(사인파 굽이)
+    // I1: 주행 경로 — 직선(기존) | coaster(성부별 나선 롤러코스터)
+    this.pathMode = "straight";   // straight | coaster
     this._lastAnalysis = null;
     this._lastMaxVoices = 0;
     // D3: 섹션 전환 추적 (카메라 호핑 + HUD)
@@ -94,6 +101,8 @@ export class Terrain {
     this.cornerGroup = new THREE.Group(); // G2 직교 3평면 반사
     this.scene.add(this.cornerGroup);
     this.cornerReflect = false;
+    this.coasterGroup = new THREE.Group(); // I1 롤러코스터 레일
+    this.scene.add(this.coasterGroup);
     this.themeGroup = new THREE.Group(); // G3 주제 타이틀 오프닝
     this.scene.add(this.themeGroup);
     this.showingTheme = false;
@@ -259,7 +268,66 @@ export class Terrain {
   setLaneSep(v) { this.laneSep = v; this._rebuild(); }
   setChordDetail(v) { this.chordDetail = v; this._rebuild(); }
   setRibbonMode(v) { this.ribbonMode = v; this._rebuild(); }
+  // I1: 롤러코스터 — 레일 재구성 + 지형 가시성 토글(재빌드 불필요).
+  setPathMode(v) { this.pathMode = v; this._buildCoasterRails(); }
   setCornerReflect(on) { this.cornerReflect = on; this._buildCornerReflect(); }
+
+  // I1: 성부별 나선 궤도 좌표. t=시점(초), laneZ=레인중심, laneIndex=성부순번, baseY=음높이.
+  // 성부마다 위상(phase)·반경(rScale)이 달라 출발지·궤도가 제각각 → '뱅글뱅글' 롤러코스터.
+  _coasterPos(t, laneZ, laneIndex, baseY) {
+    const n = Math.max(1, this._laneCount || 1);
+    const phase = laneIndex * (Math.PI * 2 / n);
+    const theta = t * COASTER_SPIN + phase;
+    const r = (COASTER_R0 + COASTER_R1 * Math.sin(t * 0.25 + phase)) * (1 + laneIndex * 0.12);
+    const cx = t * X_PER_SEC; // 곡 타임라인을 따라 계속 전진
+    return {
+      x: cx + r * 0.5 * Math.sin(theta * 2 + phase), // 코르크스크루(x 흔들림)
+      y: Math.max(CUBE / 2, baseY + COASTER_LIFT + r * Math.sin(theta)), // 수직 루프
+      z: laneZ + r * Math.cos(theta),
+    };
+  }
+
+  // I1: 각 성부의 나선 경로를 따라 가는 레일(튜브) 생성. coaster off면 레일 제거 +
+  // 기존 지형/무대를 복원, on이면 평면 지형/무대/거울/코너를 숨겨 궤도만 보이게 한다.
+  _buildCoasterRails() {
+    while (this.coasterGroup.children.length) {
+      const c = this.coasterGroup.children.pop();
+      c.geometry && c.geometry.dispose();
+      c.material && c.material.dispose();
+      this.coasterGroup.remove(c);
+    }
+    const on = this.pathMode === "coaster";
+    // coaster일 땐 평면 패러다임 오브젝트를 숨김(켜면 다시 보이게).
+    this.stageGroup.visible = !on;
+    this.mirrorGroup.visible = !on;
+    this.cornerGroup.visible = !on;
+    for (const v of this.voices) {
+      if (v.terrain) v.terrain.visible = !on;
+      if (v.pillars) v.pillars.visible = !on;
+      if (v.chordDots) v.chordDots.visible = !on;
+    }
+    if (!on) { this._applySharedTerrain(); return; } // off면 공유지형 가시성 복원
+
+    const matte = this.renderStyle === "matte";
+    const N = Math.max(8, Math.ceil((this.duration || 1) * 4)); // 초당 4 샘플
+    for (const v of this.voices) {
+      const pts = [];
+      for (let i = 0; i <= N; i++) {
+        const t = (i / N) * (this.duration || 1);
+        const baseY = this._heightAt(v.notes, t, v.isRhythm);
+        const cp = this._coasterPos(t, v.laneZ, v.laneIndex, baseY);
+        pts.push(new THREE.Vector3(cp.x, cp.y, cp.z));
+      }
+      const curve = new THREE.CatmullRomCurve3(pts);
+      const tube = new THREE.TubeGeometry(curve, N, 0.18, 6, false);
+      const mat = new THREE.MeshStandardMaterial({
+        color: v.color, transparent: true, opacity: 0.55,
+        emissive: matte ? 0x000000 : new THREE.Color(v.color).multiplyScalar(0.4),
+        roughness: matte ? 0.9 : 0.4, metalness: matte ? 0.0 : 0.2,
+      });
+      this.coasterGroup.add(new THREE.Mesh(tube, mat));
+    }
+  }
   _laneGap() {
     if (this.laneSep === "spread") return LANE_GAP_SPREAD;
     if (this.laneSep === "tight") return LANE_GAP;
@@ -545,6 +613,7 @@ export class Terrain {
     this._applySharedTerrain(); // H2a: 공유 지형(후행 지형 숨김) — chase 맵 확정 후
     this._rebuildGrid();     // E4: 바닥 크기를 곡 길이·성부 수에 맞춰 동적 재계산
     this._buildCornerReflect(); // G2 직교 3평면
+    this._buildCoasterRails();  // I1 롤러코스터 레일(가시성 토글 포함, 마지막에 적용)
   }
 
   // C4+D2: 역행/전위로 감지된 거울 대칭쌍 → 베이스 성부 지형을 바닥 아래로 뒤집은
@@ -929,8 +998,14 @@ export class Terrain {
       const effectiveLaneZ = laneZ + this._ribbonZ(t, vi);
       // 마커도 지형과 일치: 음 지속 중엔 캡 높이, 쉼표엔 얇은 레일 위.
       const y = this._heightAt(notesForY, t, isR);
-      const p = dioOn ? this._worldXZ(t, effectiveLaneZ) : { wx: t * X_PER_SEC, wz: effectiveLaneZ };
-      v.cube.position.set(p.wx, y + CUBE / 2, p.wz);
+      if (this.pathMode === "coaster") {
+        // I1: 나선 궤도 위를 주행(레일과 동일 좌표).
+        const cp = this._coasterPos(t, laneZ, vi, y);
+        v.cube.position.set(cp.x, cp.y, cp.z);
+      } else {
+        const p = dioOn ? this._worldXZ(t, effectiveLaneZ) : { wx: t * X_PER_SEC, wz: effectiveLaneZ };
+        v.cube.position.set(p.wx, y + CUBE / 2, p.wz);
+      }
       if (v.flash > 0) {
         v.flash = Math.max(0, v.flash - dt * 3);
         v.mat.emissive.setScalar(this.renderStyle === "matte" ? v.flash * 0.15 : 0.4 + v.flash * 0.6);
@@ -957,6 +1032,15 @@ export class Terrain {
   }
 
   _updateCamera(position) {
+    // I1: 롤러코스터 — 진행 방향을 약간 뒤·위에서 추적해 나선 루프가 보이게.
+    if (this.pathMode === "coaster") {
+      const cx = position * X_PER_SEC;
+      const m = this._mainVoice ? this._mainVoice.cube.position : new THREE.Vector3(cx, 15, 0);
+      const desired = new THREE.Vector3(cx - 26, m.y + 16, m.z + 30);
+      this.camera.position.lerp(desired, 0.05);
+      this.camera.lookAt(cx + 10, m.y, m.z);
+      return;
+    }
     // ③ 디오라마: 아이소메트릭 부감으로 현재 섬을 따라간다
     if (this.stageMode === "diorama" && this.diorama) {
       const seg = Math.min(

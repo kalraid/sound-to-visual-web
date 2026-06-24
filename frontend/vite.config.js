@@ -6,6 +6,7 @@ export default defineConfig({
     proxy: {
       "/analyze": "http://localhost:8000",
       "/health": "http://localhost:8000",
+      "/examples": "http://localhost:8000",
     },
   },
 });

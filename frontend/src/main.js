@@ -31,7 +31,7 @@ const PRESET_REF = {
   "ribbon-select": "straight", "chord-select": "merged",
   "bg-select": "grid", "beat-select": "drum",
   "camera-select": "overhead", "camdir-select": "right",
-  "score-select": "osmd", "corner-roll-select": "off",
+  "score-select": "osmd", "corner-roll-select": "off", "path-select": "straight",
 };
 const PRESET_ORIG = {
   "shape-select": "smooth", "style-select": "glow", "track-select": "wide",
@@ -40,7 +40,7 @@ const PRESET_ORIG = {
   "ribbon-select": "straight", "chord-select": "merged",
   "bg-select": "grid", "beat-select": "drum",
   "camera-select": "overhead", "camdir-select": "right",
-  "score-select": "osmd", "corner-roll-select": "off",
+  "score-select": "osmd", "corner-roll-select": "off", "path-select": "straight",
 };
 
 function applyPreset(preset) {
@@ -55,6 +55,77 @@ function applyPreset(preset) {
 
 $("preset-ref-btn").addEventListener("click", () => applyPreset(PRESET_REF));
 $("preset-orig-btn").addEventListener("click", () => applyPreset(PRESET_ORIG));
+
+// --- 예제 MIDI 목록 (맨 왼쪽 "MIDI 선택") ---
+const CAT_STYLE = {
+  canon: { label: "캐논", color: "#7aa2ff" },
+  harmonic: { label: "화음", color: "#ffc46b" },
+  other: { label: "기타", color: "#8892a6" },
+};
+
+async function loadExamples() {
+  const list = $("examples-list");
+  try {
+    const res = await fetch("/examples");
+    const items = await res.json();
+    if (!items.length) { list.textContent = "예제 없음"; return; }
+    list.innerHTML = "";
+    for (const it of items) {
+      const cat = CAT_STYLE[it.labelEn] || CAT_STYLE.other;
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex; align-items:center; gap:8px; padding:4px 6px;" +
+        "border-radius:6px;";
+      row.onmouseenter = () => (row.style.background = "#1a2030");
+      row.onmouseleave = () => (row.style.background = "");
+
+      const badge = document.createElement("span");
+      badge.textContent = cat.label;
+      badge.style.cssText = `flex:none; font-size:11px; font-weight:700; padding:1px 7px;` +
+        `border-radius:10px; background:${cat.color}22; color:${cat.color};` +
+        `border:1px solid ${cat.color}66;`;
+
+      const name = document.createElement("span");
+      name.textContent = it.filename.replace(/\.(mid|midi)$/i, "");
+      name.title = `${it.filename} · 성부 ${it.parts} · ${it.durationSec}s · 신뢰도 ${Math.round(it.confidence * 100)}%`;
+      name.style.cssText = "flex:1; font-size:12px; overflow:hidden; text-overflow:ellipsis;" +
+        "white-space:nowrap; color:#cdd3e0;";
+
+      const pick = document.createElement("button");
+      pick.textContent = "선택";
+      pick.style.cssText = "flex:none; font-size:12px; padding:3px 12px;";
+      pick.addEventListener("click", () => selectExample(it.filename));
+
+      row.append(badge, name, pick);
+      list.appendChild(row);
+    }
+  } catch (e) {
+    list.textContent = "목록을 불러오지 못했습니다.";
+  }
+}
+
+async function selectExample(filename) {
+  $("examples-panel").style.display = "none";
+  setStatus(`예제 불러오는 중: ${filename} ...`);
+  try {
+    const res = await fetch(`/examples/${encodeURIComponent(filename)}`);
+    if (!res.ok) throw new Error(res.statusText);
+    const blob = await res.blob();
+    await uploadFile(new File([blob], filename, { type: "audio/midi" }));
+  } catch (e) {
+    setStatus(`예제 로드 실패: ${e.message}`);
+  }
+}
+
+$("examples-btn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const p = $("examples-panel");
+  p.style.display = p.style.display === "none" ? "" : "none";
+});
+// 패널 밖 클릭 시 닫기
+document.addEventListener("click", (e) => {
+  if (!$("examples-wrap").contains(e.target)) $("examples-panel").style.display = "none";
+});
+loadExamples();
 
 $("open-btn").addEventListener("click", () => $("file-input").click());
 $("file-input").addEventListener("change", (e) => {
@@ -107,6 +178,7 @@ $("mirror-select").addEventListener("change", (e) => terrain.setMirrorEmphasis(e
 $("lane-sep-select").addEventListener("change", (e) => terrain.setLaneSep(e.target.value));
 $("chord-select").addEventListener("change", (e) => terrain.setChordDetail(e.target.value));
 $("ribbon-select").addEventListener("change", (e) => terrain.setRibbonMode(e.target.value));
+$("path-select").addEventListener("change", (e) => terrain.setPathMode(e.target.value));
 $("corner-roll-select").addEventListener("change", (e) => {
   $("mini-roll").style.display = e.target.value === "on" ? "" : "none";
 });
@@ -170,6 +242,7 @@ async function uploadFile(file) {
   terrain.laneSep = $("lane-sep-select").value;
   terrain.chordDetail = $("chord-select").value;
   terrain.ribbonMode = $("ribbon-select").value;
+  terrain.pathMode = $("path-select").value;
   terrain.cornerReflect = $("corner-reflect-select").value === "on";
   terrain.load(analysis, maxVoices);
   await score.load(analysis);

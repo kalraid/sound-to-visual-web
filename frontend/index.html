@@ -52,6 +52,16 @@
   <body>
     <div id="app">
       <div id="toolbar">
+        <!-- 맨 왼쪽: 예제 MIDI 선택 (미리 목록 + 선택 버튼) -->
+        <div id="examples-wrap" style="position:relative;">
+          <button id="examples-btn" title="예제 MIDI 목록에서 선택">🎵 MIDI 선택 ▾</button>
+          <div id="examples-panel" style="display:none; position:absolute; top:110%; left:0;
+            z-index:50; background:#11141c; border:1px solid #2a3142; border-radius:8px;
+            padding:6px; min-width:340px; max-height:60vh; overflow:auto;
+            box-shadow:0 8px 24px rgba(0,0,0,0.5);">
+            <div id="examples-list" style="display:flex; flex-direction:column; gap:4px;"></div>
+          </div>
+        </div>
         <!-- 항상 노출 -->
         <button id="open-btn">파일 열기 (.mid/.musicxml)</button>
         <input id="file-input" type="file" accept=".mid,.midi,.xml,.musicxml,.mxl" hidden />
@@ -95,6 +105,12 @@
               <select id="ribbon-select">
                 <option value="straight" selected>직선(기존)</option>
                 <option value="wave">굽이</option>
+              </select>
+            </label>
+            <label>주행경로
+              <select id="path-select" title="큐브 이동 궤도">
+                <option value="straight" selected>직선(기존)</option>
+                <option value="coaster">롤러코스터</option>
               </select>
             </label>
             <label>배경

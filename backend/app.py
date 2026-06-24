@@ -11,7 +11,7 @@ import tempfile
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from analyzer import analyze_score
 from classifier import canon_detail, classify, mirror_detail, structural_units
@@ -19,6 +19,7 @@ from classifier import canon_detail, classify, mirror_detail, structural_units
 ALLOWED = {".mid", ".midi", ".xml", ".musicxml", ".mxl"}
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
+EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), "examples")
 
 # F3: 파이프라인 버전 해시 — analyzer.py + classifier.py 내용 기반.
 # 코드 변경 시 자동으로 바뀌어 구 캐시를 무시한다.
@@ -61,6 +62,27 @@ def _build_result(path: str) -> dict:
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/examples")
+def examples():
+    """예제 MIDI 목록(분류 포함). make_examples.py 가 생성한 manifest.json 반환."""
+    manifest = os.path.join(EXAMPLES_DIR, "manifest.json")
+    if not os.path.exists(manifest):
+        return JSONResponse([])
+    with open(manifest, "r", encoding="utf-8") as f:
+        return JSONResponse(json.load(f))
+
+
+@app.get("/examples/{filename}")
+def example_file(filename: str):
+    """예제 MIDI 원본 파일 다운로드 (프론트가 받아 /analyze 로 전송)."""
+    # 경로 탈출 방지: 파일명만 허용
+    safe = os.path.basename(filename)
+    path = os.path.join(EXAMPLES_DIR, safe)
+    if not os.path.exists(path) or os.path.splitext(safe)[1].lower() not in ALLOWED:
+        raise HTTPException(404, "예제를 찾을 수 없습니다.")
+    return FileResponse(path, media_type="audio/midi", filename=safe)
 
 
 @app.post("/analyze")
