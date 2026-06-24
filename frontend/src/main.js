@@ -161,6 +161,24 @@ $("category-select").addEventListener("change", (e) => {
   $("category-conf").textContent = "(수동)";
 });
 
+// E3: 키보드 단축키 — Space=재생/정지, ←/→=±5초.
+document.addEventListener("keydown", async (e) => {
+  if (!analysis) return;
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.code === "Space") {
+    e.preventDefault();
+    await audio.ensureStarted();
+    audio.toggle();
+    $("play-btn").textContent = audio.playing ? "⏸ 일시정지" : "▶︎ 재생";
+  } else if (e.code === "ArrowLeft") {
+    e.preventDefault();
+    audio.seek(Math.max(0, audio.position - 5));
+  } else if (e.code === "ArrowRight") {
+    e.preventDefault();
+    audio.seek(Math.min(audio.duration, audio.position + 5));
+  }
+});
+
 // 비트 반응 (ADR 0009): 선택 모드에 따라 장면 펄스
 function maybePulse(hits) {
   const mode = $("beat-select").value;
