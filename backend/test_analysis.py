@@ -4,7 +4,7 @@
 import os
 
 from analyzer import analyze_score
-from classifier import classify, structural_units
+from classifier import classify, harmony_detail, structural_units
 
 SAMPLES = os.path.join(os.path.dirname(os.path.dirname(__file__)), "samples")
 
@@ -62,10 +62,24 @@ def test_structural_units_schema():
         assert all(len(parts) == 1 for parts in by_uid.values())
 
 
+def test_harmony_period_schema():
+    # I4(ADR 0015): 화성 진행 주기 감지 스키마 + 파헬벨 캐논은 8박/8초 진행 감지.
+    for name in ["melody", "canon", "bwv66", "pachelbel_canon"]:
+        a = analyze_score(os.path.join(SAMPLES, f"{name}.mid"))
+        h = harmony_detail(a)
+        assert set(h) >= {"detected", "progressionPeriodSec", "confidence", "windowSec"}
+        assert h["progressionPeriodSec"] >= 0
+        assert 0.0 <= h["confidence"] <= 1.0
+    # 파헬벨 캐논(반복 8코드 진행)은 감지되어야 함.
+    ph = harmony_detail(analyze_score(os.path.join(SAMPLES, "pachelbel_canon.mid")))
+    assert ph["detected"], f"파헬벨 진행 미감지: {ph}"
+    assert ph["progressionPeriodSec"] > 0
+
+
 if __name__ == "__main__":
     for fn in [test_melody_is_other, test_canon_is_canon,
                test_chorale_is_harmonic, test_timing_and_importance,
-               test_structural_units_schema]:
+               test_structural_units_schema, test_harmony_period_schema]:
         fn()
         print("PASS", fn.__name__)
     print("all passed")
