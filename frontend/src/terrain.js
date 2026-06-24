@@ -91,6 +91,9 @@ export class Terrain {
     this.scene.add(this.stageGroup);
     this.mirrorGroup = new THREE.Group(); // C4 거울상 고스트 지형
     this.scene.add(this.mirrorGroup);
+    this.cornerGroup = new THREE.Group(); // G2 직교 3평면 반사
+    this.scene.add(this.cornerGroup);
+    this.cornerReflect = false;
 
     this._resize = this._resize.bind(this);
     window.addEventListener("resize", this._resize);
@@ -253,6 +256,7 @@ export class Terrain {
   setLaneSep(v) { this.laneSep = v; this._rebuild(); }
   setChordDetail(v) { this.chordDetail = v; this._rebuild(); }
   setRibbonMode(v) { this.ribbonMode = v; this._rebuild(); }
+  setCornerReflect(on) { this.cornerReflect = on; this._buildCornerReflect(); }
   _laneGap() {
     if (this.laneSep === "spread") return LANE_GAP_SPREAD;
     if (this.laneSep === "tight") return LANE_GAP;
@@ -537,6 +541,7 @@ export class Terrain {
     this._buildMirror();     // C4 거울상 고스트(applyRenderStyle 뒤: 베이스 지형 머티리얼 확정 후)
     this._applySharedTerrain(); // H2a: 공유 지형(후행 지형 숨김) — chase 맵 확정 후
     this._rebuildGrid();     // E4: 바닥 크기를 곡 길이·성부 수에 맞춰 동적 재계산
+    this._buildCornerReflect(); // G2 직교 3평면
   }
 
   // C4+D2: 역행/전위로 감지된 거울 대칭쌍 → 베이스 성부 지형을 바닥 아래로 뒤집은
@@ -570,6 +575,106 @@ export class Terrain {
       ghost.userData.mirrorOf = pr;
       this.mirrorGroup.add(ghost);
     }
+  }
+
+  // G2: 직교 3평면 반사(No.13 스타일) — scroll 모드에서만 활성.
+  // 뒤벽(XY: 시간×음높이=피아노롤), 옆벽(YZ: 음높이×레인), 바닥(XZ: 시간×레인)에
+  // 캔버스 텍스처 투영. 성부색 반투명 바 형태.
+  _buildCornerReflect() {
+    while (this.cornerGroup.children.length) {
+      const c = this.cornerGroup.children.pop();
+      c.material?.map?.dispose();
+      c.material?.dispose();
+      c.geometry?.dispose();
+      this.cornerGroup.remove(c);
+    }
+    if (!this.cornerReflect || this.stageMode === "diorama" || !this._lastAnalysis) return;
+    const parts = this._lastAnalysis.parts || [];
+    const dur = this.duration || 60;
+    const totalX = dur * X_PER_SEC;
+    const laneCount = this._laneCount || 1;
+    const gap = this._laneGap();
+    const laneSpan = Math.max(gap, (laneCount - 1) * gap);
+    const pMin = (this._lastAnalysis.pitchRange?.min || 48) - 2;
+    const pMax = (this._lastAnalysis.pitchRange?.max || 84) + 2;
+    const pitchSpan = Math.max(1, pMax - pMin);
+    const wallH = Y_HEIGHT + 6;
+    const wallZOff = -(laneSpan + gap * 2.5);
+    const wallXOff = -(gap * 2);
+
+    const drawNotes = (canvas, w, h, xFn, yFn, nwFn, nhFn) => {
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#06080f";
+      ctx.fillRect(0, 0, w, h);
+      let vi = -1;
+      for (const p of parts) {
+        if (p.isRhythm) continue;
+        vi++;
+        const col = "#" + voiceColorHex(vi).toString(16).padStart(6, "0");
+        ctx.fillStyle = col;
+        for (const n of p.notes) {
+          if (n.midi == null) continue;
+          ctx.globalAlpha = 0.85;
+          ctx.fillRect(xFn(n, vi), yFn(n, vi), Math.max(2, nwFn(n)), Math.max(2, nhFn(n, vi)));
+        }
+      }
+      ctx.globalAlpha = 1;
+    };
+
+    const PX = 1024, PY = 512;
+    const pxPerSec = PX / dur;
+    const pxPerMidi = PY / pitchSpan;
+    const pxPerLane = PY / Math.max(1, laneCount);
+
+    // 뒤벽: 시간(x) × 음높이(y) — 피아노롤 투영
+    const cvBack = document.createElement("canvas");
+    cvBack.width = PX; cvBack.height = PY;
+    drawNotes(cvBack, PX, PY,
+      (n) => n.startSec * pxPerSec,
+      (n) => PY - (n.midi - pMin + 1) * pxPerMidi,
+      (n) => n.durSec * pxPerSec,
+      () => Math.max(3, pxPerMidi - 1),
+    );
+    const backPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(totalX, wallH),
+      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cvBack), transparent: true, opacity: 0.75, side: THREE.DoubleSide }),
+    );
+    backPlane.position.set(totalX / 2, wallH / 2 - 1, wallZOff);
+    this.cornerGroup.add(backPlane);
+
+    // 바닥: 시간(x) × 레인(z) — 레인 배치 투영
+    const cvFloor = document.createElement("canvas");
+    cvFloor.width = PX; cvFloor.height = PY;
+    drawNotes(cvFloor, PX, PY,
+      (n) => n.startSec * pxPerSec,
+      (_n, vi) => vi * pxPerLane,
+      (n) => n.durSec * pxPerSec,
+      () => Math.max(3, pxPerLane - 2),
+    );
+    const floorPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(totalX, laneSpan + gap * 2),
+      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cvFloor), transparent: true, opacity: 0.6, side: THREE.DoubleSide }),
+    );
+    floorPlane.rotation.x = -Math.PI / 2;
+    floorPlane.position.set(totalX / 2, -1.1, -(laneSpan + gap) / 2);
+    this.cornerGroup.add(floorPlane);
+
+    // 옆벽: 레인(z) × 음높이(y) — 화성 단면 투영
+    const cvSide = document.createElement("canvas");
+    cvSide.width = PY; cvSide.height = PY;
+    drawNotes(cvSide, PY, PY,
+      (_n, vi) => vi * pxPerLane,
+      (n) => PY - (n.midi - pMin + 1) * pxPerMidi,
+      (_n, vi) => Math.max(3, pxPerLane - 2),  // eslint-disable-line no-unused-vars
+      () => Math.max(3, pxPerMidi - 1),
+    );
+    const sidePlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(laneSpan + gap * 2, wallH),
+      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cvSide), transparent: true, opacity: 0.65, side: THREE.DoubleSide }),
+    );
+    sidePlane.rotation.y = Math.PI / 2;
+    sidePlane.position.set(wallXOff, wallH / 2 - 1, -(laneSpan + gap) / 2);
+    this.cornerGroup.add(sidePlane);
   }
 
   // C2: 각 성부가 어떤 캐논쌍의 '후행'인지 → 선행 성부 트랙 위에서 lagSec 만큼 뒤를

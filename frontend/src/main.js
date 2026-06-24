@@ -109,6 +109,7 @@ $("ribbon-select").addEventListener("change", (e) => terrain.setRibbonMode(e.tar
 $("corner-roll-select").addEventListener("change", (e) => {
   $("mini-roll").style.display = e.target.value === "on" ? "" : "none";
 });
+$("corner-reflect-select").addEventListener("change", (e) => terrain.setCornerReflect(e.target.value === "on"));
 $("score-select").addEventListener("change", (e) => {
   scoreMode = e.target.value;
   const usePiano = scoreMode === "pianoroll";
@@ -168,6 +169,7 @@ async function uploadFile(file) {
   terrain.laneSep = $("lane-sep-select").value;
   terrain.chordDetail = $("chord-select").value;
   terrain.ribbonMode = $("ribbon-select").value;
+  terrain.cornerReflect = $("corner-reflect-select").value === "on";
   terrain.load(analysis, maxVoices);
   await score.load(analysis);
   await pianoroll.load(analysis);
