@@ -17,7 +17,8 @@ const LANE_THICK = 2.4; // 지형 z 두께
 const RAIL = 0.12;      // 쉼표(음이 끝난 뒤 다음 음 전까지) 얇은 선 높이
 const DRUM_H = 0.7;     // 드럼 타격 블록 높이 (음높이는 없지만 길이는 표현)
 
-// ③ 디오라마 무대화 (Phase B): 곡을 정사각 "섬"으로 나눠 스네이크(boustrophedon) 배치.
+// ③ 디오라마 무대화 (Phase B): 곡을 정사각 "구간(Segment)"으로 나눠 스네이크(boustrophedon) 배치.
+// 현재는 10초 균등 분할. 음악 내용 기반 "섬(Island)"으로의 교체는 H2b 이후.
 const DIO_CELL = 60;          // 섬 한 변(월드 단위) = 한 구간의 진행 거리
 const DIO_GAP = 18;           // 섬 사이 간격
 const DIO_SEG_DUR = DIO_CELL / X_PER_SEC; // 구간 길이(초): cell 폭에 정확히 맞춤(=10s)
@@ -149,16 +150,46 @@ export class Terrain {
     return tex;
   }
 
-  _addGrid() {
-    const grid = new THREE.GridHelper(2000, 400, 0x2a3a66, 0x141d33);
-    grid.position.y = -0.02;
+  _addGrid() { this._rebuildGrid(); }
+
+  // E4: load() 후 곡 길이·디오라마 배치에 맞춰 바닥 크기를 동적 재계산.
+  _rebuildGrid() {
+    if (this.bgMode !== "grid") return;
+    // 기존 grid/floor 제거
+    const toRemove = this.bgGroup.children.filter(
+      (c) => c.userData.isGrid || c.userData.isFloor
+    );
+    toRemove.forEach((c) => { c.geometry && c.geometry.dispose(); this.bgGroup.remove(c); });
+
+    let w, d, cx, cz;
+    if (this.stageMode === "diorama" && this.diorama) {
+      const L = this.diorama;
+      const rows = Math.ceil(L.nSegs / L.cols);
+      const laneSpread = (this._laneCount || 1) * this._laneGap();
+      w = L.cols * L.pitch + L.cell + 200;
+      d = rows * L.pitchZ + L.cell + laneSpread + 200;
+      cx = L.cols * L.pitch / 2;
+      cz = rows * L.pitchZ / 2 - laneSpread / 2;
+    } else {
+      const totalX = (this.duration || 0) * X_PER_SEC;
+      const laneSpread = (this._laneCount || 1) * this._laneGap();
+      w = Math.max(totalX + 200, 4000);
+      d = Math.max(laneSpread + 100, 400);
+      cx = totalX / 2;
+      cz = -laneSpread / 2;
+    }
+    const divisions = Math.min(Math.round(Math.max(w, d) / 5), 800);
+    const grid = new THREE.GridHelper(Math.max(w, d), divisions, 0x2a3a66, 0x141d33);
+    grid.position.set(cx, -0.02, cz);
+    grid.userData.isGrid = true;
     this.bgGroup.add(grid);
     const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(4000, 400),
+      new THREE.PlaneGeometry(w, d),
       new THREE.MeshStandardMaterial({ color: 0x070a14, roughness: 0.4, metalness: 0.6 })
     );
     floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -0.05;
+    floor.position.set(cx, -0.05, cz);
+    floor.userData.isFloor = true;
     this.bgGroup.add(floor);
   }
 
@@ -407,6 +438,7 @@ export class Terrain {
     this.applyRenderStyle(); // 재빌드 후 렌더 스타일 + 디오라마 무대 재적용
     this._buildMirror();     // C4 거울상 고스트(applyRenderStyle 뒤: 베이스 지형 머티리얼 확정 후)
     this._applySharedTerrain(); // H2a: 공유 지형(후행 지형 숨김) — chase 맵 확정 후
+    this._rebuildGrid();     // E4: 바닥 크기를 곡 길이·성부 수에 맞춰 동적 재계산
   }
 
   // C4+D2: 역행/전위로 감지된 거울 대칭쌍 → 베이스 성부 지형을 바닥 아래로 뒤집은

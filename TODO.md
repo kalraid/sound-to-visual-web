@@ -119,16 +119,22 @@
       (PianoRollPanel)과 독립적으로 동작(각자 `load`/`update` 호출). pps=40 고정.
 
 ## Phase E — UX 완성 (다음 단계 후보)
+> 설계 결정 (grill-with-docs, 2026-06-24):
+> - E3(키보드 R키)는 E1 프리셋 버튼의 단축키로 통합 — 별도 구현 없음.
+> - "기존" 버튼 = 모든 토글 하드코딩 기본값으로 완전 초기화 (undo 아님).
+> - E2 그룹 배치: [시각]=지형·렌더·트랙·리본·배경·비트 / [성부]=레인분리·화음·추격·공유·거울 / [무대]=무대·카메라·시점 / [악보]=악보·악보크기·코너롤. 분류·최대성부·파일열기는 항상 노출.
+> - 프리셋 버튼 위치: 툴바 맨 앞(파일 열기 옆). 접기 UI: 그룹명 클릭(▶/▼ 인라인 힌트).
+> - E4: load() 시 스네이크 배치 범위로 동적 재계산. E5: `_ribbonZ(t - lagSec, leaderLane)` 적용.
 
-- [ ] **E1. 레퍼런스 모드 프리셋 버튼** — "레퍼런스" 원클릭 = stepped+matte+narrow+spread+diorama 일괄 적용. "기존" 버튼으로 리셋.
-- [ ] **E2. 툴바 그룹화** — 16개 컨트롤을 [시각]/[성부]/[무대]/[악보] 4묶음으로 접기 가능하게.
-- [ ] **E3. 키보드 단축키** — Space=재생/정지, ←/→=±5초, R=기존↔레퍼런스 토글.
-- [ ] **E4. 그리드 바닥 확장** — 디오라마 섬 분포에 맞춰 그리드/플로어 동적 크기 계산. (Phase B 미해결)
-- [ ] **E5. C2↔D1 충돌 해결** — wave 모드에서 추격 큐브도 선행 성부 리본 z를 따르도록(현재 평면 laneZ만 씀).
+- [ ] **E1. 레퍼런스 모드 프리셋 버튼** — "레퍼런스" 원클릭 = stepped+matte+narrow+spread+diorama 일괄 적용. "기존" 버튼 = 전체 토글 초기화. R키 단축키 포함(E3 흡수).
+- [ ] **E2. 툴바 그룹화** — 16개 컨트롤을 [시각]/[성부]/[무대]/[악보] 4묶음으로 접기 가능하게. 그룹명 클릭으로 토글(▶/▼ 인라인). 분류·최대성부·파일열기·프리셋 버튼은 항상 노출.
+- [ ] **E3. 키보드 단축키** — Space=재생/정지, ←/→=±5초. (R키는 E1에 통합됨)
+- [x] **E4. 그리드 바닥 확장** ✅ (2026-06-24): `_rebuildGrid()` — `load()` 끝에 호출, 스크롤 모드는 `duration×X_PER_SEC+margin`, 디오라마 모드는 `cols×pitch × rows×pitchZ+laneSpread+margin`으로 동적 재계산. `userData.isGrid/isFloor`로 태깅 후 기존 mesh 제거 후 재생성.
+- [x] **E5. C2↔D1 충돌 해결** ✅ (D4에서 기 해결): `update()`의 추격 큐브가 이미 `_ribbonZ(t, leaderLaneIndex)` 적용 — `t`는 `position-lagSec`, `vi`는 leader laneIndex. D4 구현 시 함께 해결됨.
 
 ## Phase F — 백엔드 개선 (중기)
 
-- [ ] **F1. 마디(measure) 경계 추출** — music21 `part.measure(n)` 시간 정보를 분석 JSON 노출 → D3 섬 분할을 10초 균등 대신 마디 그룹 단위로.
+- [ ] **F1. 마디(measure) 경계 추출** — music21 `part.measure(n)` 시간 정보를 분석 JSON 노출 → D3 구간 분할을 10초 균등 대신 마디 그룹 단위로 자동 교체(토글 없음, 데이터 있으면 항상 사용).
 - [ ] **F2. 성부명 표시** — `part.name`을 툴바·피아노롤에 표시(현재 색으로만 구분).
 - [ ] **F3. 캐시 무효화** — 분석 결과에 버전 해시 부착, 파이프라인 변경 시 자동 무효.
 
@@ -149,11 +155,16 @@
         `_applySharedTerrain()`(가시성만, 재빌드 X), load·setCanonEmphasis·setSharedTerrain에서 호출.
         비캐논/추격off/공유off면 전부 복구. Playwright 수치 검증(`e2e/shared-terrain.spec.js`):
         off=전부 보임, on=후행만 숨김(terrainVisible===!chase), 복구·콘솔무에러 확인.
-  - [ ] **H2b. 순환 횡단 + 섬 단위 지형 재빌드** (보류) — 큐브 x=`((t-voiceStart)%period)*X_PER_SEC`.
-        곡 전체 길이 지형을 섬 단위로 재빌드해야 순환이 자연스러움(분량 큼). period 실데이터
-        (structuralUnit) 약해 검증 어려움 → H1 임계 완화 또는 실 캐논곡 샘플 확보 후 진행.
+  - [ ] **H2b. 순환 횡단 + 섬 단위 지형 재빌드** (보류 해제 가능) — 큐브 x=`((t-voiceStart)%period)*X_PER_SEC`.
+        곡 전체 길이 지형을 섬 단위로 재빌드해야 순환이 자연스러움(분량 큼).
+        **재개 조건 달성** (2026-06-24, `samples/pachelbel_canon.mid` 검증):
+        structuralUnits=8개(bass 성부, period=8.0s). canon.pairs 3쌍 모두 lagSec 정확 감지.
+        ⚠️ 캐논 바이올린 성부는 테마를 1회만 연주 → structuralUnits 없음.
+        **H2b period 소스**: `canon.pairs[*].lagSec`(초기값, ADR 0013 설계 그대로).
+        structuralUnits로의 교체는 bass가 아닌 canon 성부에서 감지될 때만 유효.
 - [ ] **H3. Z 유사도 배치** — 음악적 유사도 → Z 거리 레이아웃.
       캐논=Z 완전 공유, 화음=좁은 클러스터(gap≈1.5), 무관=넓은 분리(LANE_GAP 유지).
+      **구현 방식**: 카테고리 일괄 적용(`classify()` 출력 기준). 성부쌍별 동적 계산은 H1 structuralUnits 강화 이후 검토.
 - [ ] **H4. 구간 재방문 (A-B-A)** — 비캐논 형식 재방문은 복사본 방식.
       H1 `structuralUnits`로 재방문 구간 감지, 카메라가 섬 고정 좌표로 이동.
 - [ ] **H5. 지형 업그레이드 애니메이션** _(선택, 별도 ADR 필요)_ — 변주 재방문 시 terrain morph.
