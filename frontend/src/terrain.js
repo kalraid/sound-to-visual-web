@@ -10,6 +10,10 @@ const X_PER_SEC = 6;
 const Y_HEIGHT = 10;
 const LANE_GAP = 8;
 const LANE_GAP_SPREAD = 14; // D1: spread 모드 레인 간격
+// H3: 분류별 자동 간격 (auto 모드)
+const LANE_GAP_CANON = 1.0;    // 캐논 → 거의 공유 Z (sharedTerrain이 리본 겹침 처리)
+const LANE_GAP_HARMONIC = 2.5; // 화음 → 좁은 군집
+// other → LANE_GAP (8)
 const A_WAVE = 2.5;          // D4: 리본 파동 진폭 (Z 단위)
 const ω_WAVE = (Math.PI * 2) / 30; // D4: 파동 주기 30초 (한 파장)
 const CUBE = 1.0;
@@ -73,7 +77,7 @@ export class Terrain {
     this.mirrorEmphasis = true;
     this.mirror = null;           // analysis.mirror (load 시 보관)
     // D1: 성부 경로 분리 + 화음 개별 표시
-    this.laneSep = "tight";       // tight(기존 LANE_GAP=8) | spread(14)
+    this.laneSep = "auto";        // auto(분류기반) | tight(LANE_GAP=8) | spread(14)
     this.chordDetail = "merged";  // merged(기존) | individual(화음음 개별 구체)
     // D4: 리본 파동 경로
     this.ribbonMode = "straight"; // straight(기존) | wave(사인파 굽이)
@@ -249,7 +253,15 @@ export class Terrain {
   setLaneSep(v) { this.laneSep = v; this._rebuild(); }
   setChordDetail(v) { this.chordDetail = v; this._rebuild(); }
   setRibbonMode(v) { this.ribbonMode = v; this._rebuild(); }
-  _laneGap() { return this.laneSep === "spread" ? LANE_GAP_SPREAD : LANE_GAP; }
+  _laneGap() {
+    if (this.laneSep === "spread") return LANE_GAP_SPREAD;
+    if (this.laneSep === "tight") return LANE_GAP;
+    // H3: "auto" — 분류(category) 기반 자동 간격
+    const cat = this._lastAnalysis?.category?.labelEn;
+    if (cat === "canon") return LANE_GAP_CANON;
+    if (cat === "harmonic") return LANE_GAP_HARMONIC;
+    return LANE_GAP;
+  }
   // D4: 레인 기준 z에서의 사인파 오프셋. laneIndex별로 위상 120° 차이 → 서로 독립적으로 굽이침.
   _ribbonZ(timeSec, laneIndex) {
     if (this.ribbonMode !== "wave") return 0;

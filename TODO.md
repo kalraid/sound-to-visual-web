@@ -155,8 +155,7 @@
         `_applySharedTerrain()`(가시성만, 재빌드 X), load·setCanonEmphasis·setSharedTerrain에서 호출.
         비캐논/추격off/공유off면 전부 복구. Playwright 수치 검증(`e2e/shared-terrain.spec.js`):
         off=전부 보임, on=후행만 숨김(terrainVisible===!chase), 복구·콘솔무에러 확인.
-- [ ] **H3. Z 유사도 배치** — 음악적 유사도 → Z 거리 레이아웃.
-      캐논=Z 완전 공유, 화음=좁은 클러스터(gap≈1.5), 무관=넓은 분리(LANE_GAP 유지).
+- [x] **H3. Z 유사도 배치** ✅ (2026-06-24): `LANE_GAP_CANON=1.0`, `LANE_GAP_HARMONIC=2.5` 추가. `_laneGap()`에 `laneSep==="auto"` 분기 — category.labelEn 따라 자동(canon→1, harmonic→2.5, other→8). UI/프리셋 기본값 "auto"로 변경.
       **구현 방식**: 카테고리 일괄 적용(`classify()` 출력 기준). 성부쌍별 동적 계산은 H1 structuralUnits 강화 이후 검토.
 
 ## Phase G — 조형 고도화 (장기, Phase H 이후)

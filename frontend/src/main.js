@@ -26,7 +26,7 @@ let prevPos = 0;
 // E1: 레퍼런스 모드 프리셋 — 전부 신규값이면 레퍼런스 느낌(ADR 0011).
 const PRESET_REF = {
   "shape-select": "stepped", "style-select": "matte", "track-select": "narrow",
-  "stage-select": "diorama", "lane-sep-select": "spread",
+  "stage-select": "diorama", "lane-sep-select": "auto",
   "canon-select": "on", "share-select": "off", "mirror-select": "on",
   "ribbon-select": "straight", "chord-select": "merged",
   "bg-select": "grid", "beat-select": "drum",
@@ -35,7 +35,7 @@ const PRESET_REF = {
 };
 const PRESET_ORIG = {
   "shape-select": "smooth", "style-select": "glow", "track-select": "wide",
-  "stage-select": "scroll", "lane-sep-select": "tight",
+  "stage-select": "scroll", "lane-sep-select": "auto",
   "canon-select": "on", "share-select": "off", "mirror-select": "on",
   "ribbon-select": "straight", "chord-select": "merged",
   "bg-select": "grid", "beat-select": "drum",
