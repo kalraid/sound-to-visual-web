@@ -89,6 +89,7 @@ export class Terrain {
     // I2/I3: 주행 경로 — 직선(기존) | coaster(공유 피치 나선)
     this.pathMode = "straight";   // straight | coaster
     this.helixRot = 0;            // I3: 나선 전역 회전각(라디안, lap 구동)
+    this.lapSec = 8;              // I3: 한 바퀴(lap) 시간 — load 시 코드주기/마디로 계산
     this._lastAnalysis = null;
     this._lastMaxVoices = 0;
     // D3: 섹션 전환 추적 (카메라 호핑 + HUD)
@@ -272,6 +273,20 @@ export class Terrain {
   // I1: 롤러코스터 — 레일 재구성 + 지형 가시성 토글(재빌드 불필요).
   setPathMode(v) { this.pathMode = v; this._buildCoasterRails(); }
   setCornerReflect(on) { this.cornerReflect = on; this._buildCornerReflect(); }
+
+  // I3: lap(한 바퀴) 시간 결정 — 코드 진행 주기 → 마디 → 고정 기본값(ADR 0015 / Q9).
+  // 마디 데이터가 부실하면 lap이 과도하게 길/짧아질 수 있어 [3,16]초로 클램프(항상 체감 가능).
+  _computeLap() {
+    const a = this._lastAnalysis;
+    const h = a && a.harmony;
+    const clamp = (v) => Math.max(3, Math.min(16, v));
+    if (h && h.detected && h.progressionPeriodSec > 0) return clamp(h.progressionPeriodSec);
+    const meas = a && a.measures;
+    if (meas && meas.length > 1 && this.duration > 0) {
+      return clamp((this.duration / meas.length) * 4); // 4마디 = 1바퀴
+    }
+    return 8; // 고정 폴백
+  }
 
   // I2: 공유 피치 나선 좌표(회전 미적용 원점 좌표). midi → 나선 위의 한 점.
   // 같은 음은 항상 같은 점 → 교차. 전역 회전(I3)은 coasterGroup/큐브에 일괄 적용.
@@ -635,7 +650,8 @@ export class Terrain {
     this._applySharedTerrain(); // H2a: 공유 지형(후행 지형 숨김) — chase 맵 확정 후
     this._rebuildGrid();     // E4: 바닥 크기를 곡 길이·성부 수에 맞춰 동적 재계산
     this._buildCornerReflect(); // G2 직교 3평면
-    this._buildCoasterRails();  // I1 롤러코스터 레일(가시성 토글 포함, 마지막에 적용)
+    this.lapSec = this._computeLap(); // I3: lap 시간(코드주기/마디/기본값)
+    this._buildCoasterRails();  // I2 피치 나선 레일(가시성 토글 포함, 마지막에 적용)
   }
 
   // C4+D2: 역행/전위로 감지된 거울 대칭쌍 → 베이스 성부 지형을 바닥 아래로 뒤집은
@@ -1007,7 +1023,11 @@ export class Terrain {
     const hud = document.getElementById("section-hud");
     if (hud) hud.style.display = (this.stageMode === "diorama") ? "" : "none";
     const dioOn = this.stageMode === "diorama" && this.diorama;
-    if (this.pathMode === "coaster") this.coasterGroup.rotation.y = this.helixRot || 0;
+    if (this.pathMode === "coaster") {
+      // I3: 전역 회전 — 1바퀴 = 1 lap(코드 진행 주기). 재생 위치가 회전을 구동.
+      this.helixRot = (position / (this.lapSec || 8)) * (Math.PI * 2);
+      this.coasterGroup.rotation.y = this.helixRot;
+    }
     for (const v of this.voices) {
       // C2 시차 추격: 후행 성부는 선행 성부의 트랙(레인) 위에서 lagSec 만큼 뒤 시점을
       // 달려 같은 구조를 '추격'한다. 비캐논/토글 off면 자기 트랙·현재시각 그대로.
