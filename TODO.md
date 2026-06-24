@@ -127,7 +127,7 @@
 > - E4: load() 시 스네이크 배치 범위로 동적 재계산. E5: `_ribbonZ(t - lagSec, leaderLane)` 적용.
 
 - [x] **E1. 레퍼런스 모드 프리셋 버튼** ✅ (2026-06-24): 툴바 맨 앞 "🎬 레퍼런스" / "↺ 기존" 버튼. PRESET_REF(stepped+matte+narrow+diorama+spread), PRESET_ORIG(전체 기본값). `applyPreset()`이 각 select에 change 이벤트 dispatch 후 terrain.load() 재빌드. R키: shape-select 값으로 현재 프리셋 판별 후 토글.
-- [ ] **E2. 툴바 그룹화** — 16개 컨트롤을 [시각]/[성부]/[무대]/[악보] 4묶음으로 접기 가능하게. 그룹명 클릭으로 토글(▶/▼ 인라인). 분류·최대성부·파일열기·프리셋 버튼은 항상 노출.
+- [x] **E2. 툴바 그룹화** ✅ (2026-06-24): 16개 컨트롤을 `.ctrl-group`으로 묶어 [시각]/[성부]/[무대]/[악보] 4묶음. 그룹 헤더 클릭 → `.group-body.collapsed` 토글(▶/▼ 인라인). 분류·최대성부·파일열기·프리셋은 항상 노출.
 - [x] **E3. 키보드 단축키** ✅ (2026-06-24): Space=재생/정지, ←/→=±5초. `keydown` 리스너, input/select 포커스 시 무시. R키는 E1에 통합.
 - [x] **E4. 그리드 바닥 확장** ✅ (2026-06-24): `_rebuildGrid()` — `load()` 끝에 호출, 스크롤 모드는 `duration×X_PER_SEC+margin`, 디오라마 모드는 `cols×pitch × rows×pitchZ+laneSpread+margin`으로 동적 재계산. `userData.isGrid/isFloor`로 태깅 후 기존 mesh 제거 후 재생성.
 - [x] **E5. C2↔D1 충돌 해결** ✅ (D4에서 기 해결): `update()`의 추격 큐브가 이미 `_ribbonZ(t, leaderLaneIndex)` 적용 — `t`는 `position-lagSec`, `vi`는 leader laneIndex. D4 구현 시 함께 해결됨.

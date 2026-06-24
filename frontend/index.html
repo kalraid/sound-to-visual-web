@@ -11,11 +11,19 @@
         font-family: system-ui, "Segoe UI", sans-serif; overflow: hidden; }
       #app { display: flex; flex-direction: column; height: 100vh; }
 
-      #toolbar { display: flex; gap: 12px; align-items: center; padding: 8px 12px;
+      #toolbar { display: flex; gap: 8px; align-items: center; padding: 8px 12px;
         background: #11141c; border-bottom: 1px solid #222838; flex-wrap: wrap; }
       #toolbar label { font-size: 13px; color: #aab; }
       #category { font-weight: 700; padding: 2px 10px; border-radius: 6px;
         background: #1d2740; }
+      .ctrl-group { display: flex; align-items: center; gap: 6px;
+        border-left: 1px solid #2a3142; padding-left: 8px; }
+      .group-hdr { background: #141824; border: 1px solid #2a3142; color: #8892a6;
+        padding: 3px 8px; cursor: pointer; border-radius: 4px; font-size: 12px;
+        white-space: nowrap; }
+      .group-hdr:hover { color: #e8eaf0; background: #1a2030; }
+      .group-body { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+      .group-body.collapsed { display: none; }
       select, input[type="range"], button { background: #1a1f2b; color: #e8eaf0;
         border: 1px solid #2a3142; border-radius: 6px; padding: 5px 8px; font-size: 13px; }
       button { cursor: pointer; }
@@ -44,9 +52,10 @@
   <body>
     <div id="app">
       <div id="toolbar">
+        <!-- 항상 노출 -->
         <button id="open-btn">파일 열기 (.mid/.musicxml)</button>
         <input id="file-input" type="file" accept=".mid,.midi,.xml,.musicxml,.mxl" hidden />
-        <button id="preset-ref-btn" title="레퍼런스 느낌 일괄 적용 (R)">🎬 레퍼런스</button>
+        <button id="preset-ref-btn" title="레퍼런스 느낌 일괄 적용 (R)">레퍼런스</button>
         <button id="preset-orig-btn" title="모든 토글 기본값으로 초기화">↺ 기존</button>
         <span>분류:</span>
         <select id="category-select" title="자동 분류 결과 — 오판 시 수동 변경(ADR 0005)">
@@ -58,108 +67,137 @@
         <label>최대 성부 <span id="voice-count">4</span>
           <input id="voice-slider" type="range" min="1" max="8" value="4" />
         </label>
-        <label>카메라
-          <select id="camera-select">
-            <option value="overhead" selected>3/4 부감</option>
-            <option value="chase">추격</option>
-            <option value="side">측면</option>
-          </select>
-        </label>
-        <label>시점
-          <select id="camdir-select">
-            <option value="right" selected>우(앞)</option>
-            <option value="left">좌(뒤)</option>
-          </select>
-        </label>
-        <label>배경
-          <select id="bg-select">
-            <option value="grid" selected>그라데이션+그리드</option>
-            <option value="space">우주/별</option>
-            <option value="solid">단색</option>
-          </select>
-        </label>
-        <label>비트반응
-          <select id="beat-select">
-            <option value="drum" selected>드럼/강박</option>
-            <option value="all">모든 음</option>
-            <option value="none">없음</option>
-          </select>
-        </label>
-        <label>지형
-          <select id="shape-select">
-            <option value="smooth" selected>능선(기존)</option>
-            <option value="stepped">블록</option>
-          </select>
-        </label>
-        <label>렌더
-          <select id="style-select">
-            <option value="glow" selected>발광(기존)</option>
-            <option value="matte">무광</option>
-          </select>
-        </label>
-        <label>트랙
-          <select id="track-select">
-            <option value="wide" selected>넓게(기존)</option>
-            <option value="narrow">좁게</option>
-          </select>
-        </label>
-        <label>무대
-          <select id="stage-select">
-            <option value="scroll" selected>스크롤(기존)</option>
-            <option value="diorama">디오라마</option>
-          </select>
-        </label>
-        <label>추격강조
-          <select id="canon-select">
-            <option value="on" selected>켜기(캐논)</option>
-            <option value="off">끄기</option>
-          </select>
-        </label>
-        <label>공유지형
-          <select id="share-select">
-            <option value="off" selected>끄기(기존)</option>
-            <option value="on">켜기(캐논)</option>
-          </select>
-        </label>
-        <label>거울대칭
-          <select id="mirror-select">
-            <option value="on" selected>켜기(역행/전위)</option>
-            <option value="off">끄기</option>
-          </select>
-        </label>
-        <label>레인분리
-          <select id="lane-sep-select">
-            <option value="tight" selected>기존</option>
-            <option value="spread">분리</option>
-          </select>
-        </label>
-        <label>화음표시
-          <select id="chord-select">
-            <option value="merged" selected>병합(기존)</option>
-            <option value="individual">개별</option>
-          </select>
-        </label>
-        <label>리본경로
-          <select id="ribbon-select">
-            <option value="straight" selected>직선(기존)</option>
-            <option value="wave">굽이</option>
-          </select>
-        </label>
-        <label>코너롤
-          <select id="corner-roll-select">
-            <option value="off" selected>끄기(기존)</option>
-            <option value="on">켜기</option>
-          </select>
-        </label>
-        <label>악보
-          <select id="score-select">
-            <option value="osmd" selected>오선보(기존)</option>
-            <option value="pianoroll">피아노롤</option>
-          </select>
-        </label>
-        <label>악보크기 <span id="score-zoom-val">1.1</span>
-          <input id="score-zoom" type="range" min="0.3" max="2.0" step="0.1" value="1.1" />
-        </label>
+
+        <!-- [시각] 그룹 -->
+        <div class="ctrl-group">
+          <button class="group-hdr">▼ 시각</button>
+          <div class="group-body">
+            <label>지형
+              <select id="shape-select">
+                <option value="smooth" selected>능선(기존)</option>
+                <option value="stepped">블록</option>
+              </select>
+            </label>
+            <label>렌더
+              <select id="style-select">
+                <option value="glow" selected>발광(기존)</option>
+                <option value="matte">무광</option>
+              </select>
+            </label>
+            <label>트랙
+              <select id="track-select">
+                <option value="wide" selected>넓게(기존)</option>
+                <option value="narrow">좁게</option>
+              </select>
+            </label>
+            <label>리본
+              <select id="ribbon-select">
+                <option value="straight" selected>직선(기존)</option>
+                <option value="wave">굽이</option>
+              </select>
+            </label>
+            <label>배경
+              <select id="bg-select">
+                <option value="grid" selected>그라데이션+그리드</option>
+                <option value="space">우주/별</option>
+                <option value="solid">단색</option>
+              </select>
+            </label>
+            <label>비트반응
+              <select id="beat-select">
+                <option value="drum" selected>드럼/강박</option>
+                <option value="all">모든 음</option>
+                <option value="none">없음</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <!-- [성부] 그룹 -->
+        <div class="ctrl-group">
+          <button class="group-hdr">▼ 성부</button>
+          <div class="group-body">
+            <label>레인분리
+              <select id="lane-sep-select">
+                <option value="tight" selected>기존</option>
+                <option value="spread">분리</option>
+              </select>
+            </label>
+            <label>화음표시
+              <select id="chord-select">
+                <option value="merged" selected>병합(기존)</option>
+                <option value="individual">개별</option>
+              </select>
+            </label>
+            <label>추격강조
+              <select id="canon-select">
+                <option value="on" selected>켜기(캐논)</option>
+                <option value="off">끄기</option>
+              </select>
+            </label>
+            <label>공유지형
+              <select id="share-select">
+                <option value="off" selected>끄기(기존)</option>
+                <option value="on">켜기(캐논)</option>
+              </select>
+            </label>
+            <label>거울대칭
+              <select id="mirror-select">
+                <option value="on" selected>켜기(역행/전위)</option>
+                <option value="off">끄기</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <!-- [무대] 그룹 -->
+        <div class="ctrl-group">
+          <button class="group-hdr">▼ 무대</button>
+          <div class="group-body">
+            <label>무대
+              <select id="stage-select">
+                <option value="scroll" selected>스크롤(기존)</option>
+                <option value="diorama">디오라마</option>
+              </select>
+            </label>
+            <label>카메라
+              <select id="camera-select">
+                <option value="overhead" selected>3/4 부감</option>
+                <option value="chase">추격</option>
+                <option value="side">측면</option>
+              </select>
+            </label>
+            <label>시점
+              <select id="camdir-select">
+                <option value="right" selected>우(앞)</option>
+                <option value="left">좌(뒤)</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <!-- [악보] 그룹 -->
+        <div class="ctrl-group">
+          <button class="group-hdr">▼ 악보</button>
+          <div class="group-body">
+            <label>악보
+              <select id="score-select">
+                <option value="osmd" selected>오선보(기존)</option>
+                <option value="pianoroll">피아노롤</option>
+              </select>
+            </label>
+            <label>악보크기 <span id="score-zoom-val">1.1</span>
+              <input id="score-zoom" type="range" min="0.3" max="2.0" step="0.1" value="1.1" />
+            </label>
+            <label>코너롤
+              <select id="corner-roll-select">
+                <option value="off" selected>끄기(기존)</option>
+                <option value="on">켜기</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
         <span id="status">파일을 열어 시작하세요</span>
       </div>
 

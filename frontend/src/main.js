@@ -235,6 +235,15 @@ function fmt(sec) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// E2: 그룹 헤더 클릭 → 그룹 바디 접기/펼치기
+document.querySelectorAll(".group-hdr").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const body = btn.nextElementSibling;
+    const collapsed = body.classList.toggle("collapsed");
+    btn.textContent = btn.textContent.replace(/[▶▼]/, collapsed ? "▶" : "▼");
+  });
+});
+
 // --- 단일 렌더 루프 (공통 시계) ---
 let lastFrame = performance.now();
 function loop() {
