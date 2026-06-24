@@ -3,6 +3,7 @@ import { AudioEngine } from "./audio.js";
 import { ScorePanel } from "./score.js";
 import { PianoRollPanel, MiniRollOverlay } from "./pianoroll.js";
 import { Terrain } from "./terrain.js";
+import { voiceColorHex } from "./colors.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -144,6 +145,7 @@ async function uploadFile(file) {
   }
   $("drop-hint").style.display = "none";
   showCategory(analysis.category);
+  showVoiceNames(analysis.parts);
   // 최대 성부 = 전체 트랙 수(드럼 포함). 기본값은 전부 표시.
   const total = analysis.parts.length;
   $("voice-slider").max = Math.max(1, total);
@@ -183,6 +185,23 @@ async function uploadFile(file) {
 function showCategory(cat) {
   $("category-select").value = cat.labelEn;
   $("category-conf").textContent = `(${Math.round(cat.confidence * 100)}%)`;
+}
+
+// F2: 성부명을 컬러 칩으로 표시 (음정 성부만)
+function showVoiceNames(parts) {
+  const el = $("voice-names");
+  el.innerHTML = "";
+  let vi = 0;
+  for (const p of parts) {
+    if (p.isRhythm) continue;
+    const col = "#" + String(voiceColorHex(vi).toString(16)).padStart(6, "0");
+    const chip = document.createElement("span");
+    chip.style.cssText = `background:${col}22;color:${col};border:1px solid ${col}66;
+      padding:1px 7px;border-radius:10px;font-size:11px;white-space:nowrap;`;
+    chip.textContent = p.name || `Part ${vi + 1}`;
+    el.appendChild(chip);
+    vi++;
+  }
 }
 
 // C5: 분류 오판 수동 보정(ADR 0005). 라벨을 캐논으로 바꾸면 추격 강조를 켜고,

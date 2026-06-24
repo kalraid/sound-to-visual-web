@@ -124,6 +124,27 @@ export class PianoRollPanel {
     }
     ctx.globalAlpha = 1.0;
 
+    // F2: 성부명 레이블 — 좌측 가장자리에 성부색으로 표시
+    ctx.font = `bold ${Math.max(10, Math.min(13, H / 20))}px system-ui, sans-serif`;
+    ctx.textBaseline = "middle";
+    let vi2 = -1;
+    for (const p of parts) {
+      if (p.isRhythm) continue;
+      vi2++;
+      const col = "#" + voiceColorHex(vi2).toString(16).padStart(6, "0");
+      // 이 성부 음표의 중간 y 위치
+      const midis = p.notes.filter((n) => n.midi != null).map((n) => n.midi);
+      if (!midis.length) continue;
+      const medMidi = midis[Math.floor(midis.length / 2)];
+      const labelY = Math.max(12, Math.min(H - 12, this._yFor(medMidi)));
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      const name = p.name || `Part ${vi2 + 1}`;
+      const tw = ctx.measureText(name).width;
+      ctx.fillRect(2, labelY - 9, tw + 6, 18);
+      ctx.fillStyle = col;
+      ctx.fillText(name, 5, labelY);
+    }
+
     // playhead
     ctx.strokeStyle = "#d23";
     ctx.lineWidth = 2;
