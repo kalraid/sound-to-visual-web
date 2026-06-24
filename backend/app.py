@@ -20,6 +20,20 @@ ALLOWED = {".mid", ".midi", ".xml", ".musicxml", ".mxl"}
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
+# F3: 파이프라인 버전 해시 — analyzer.py + classifier.py 내용 기반.
+# 코드 변경 시 자동으로 바뀌어 구 캐시를 무시한다.
+def _pipeline_hash() -> str:
+    h = hashlib.sha1()
+    for fname in ("analyzer.py", "classifier.py"):
+        fpath = os.path.join(os.path.dirname(__file__), fname)
+        try:
+            h.update(open(fpath, "rb").read())
+        except OSError:
+            pass
+    return h.hexdigest()[:8]
+
+PIPELINE_HASH = _pipeline_hash()
+
 app = FastAPI(title="sound-to-visual-web")
 app.add_middleware(
     CORSMiddleware,
@@ -60,7 +74,7 @@ async def analyze(file: UploadFile = File(...)):
         raise HTTPException(400, "빈 파일입니다.")
 
     digest = hashlib.sha1(data).hexdigest()
-    cache_path = os.path.join(CACHE_DIR, f"{digest}.json")
+    cache_path = os.path.join(CACHE_DIR, f"{digest}_{PIPELINE_HASH}.json")
     if os.path.exists(cache_path):
         with open(cache_path, "r", encoding="utf-8") as f:
             return JSONResponse(json.load(f))

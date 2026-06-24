@@ -136,7 +136,7 @@
 
 - [x] **F1. 마디(measure) 경계 추출** ✅ (2026-06-24): `_extract_measures()` — `part.secondsMap`에서 Measure 객체 추출, `analysis.measures: [{number, startSec}]` 노출. `_computeDiorama()`에서 measures 있으면 `avgMeasureDur × measuresPerSeg`로 segDur 자동 교체(토글 없음). 검증: pachelbel_canon 16마디(4s), bwv66 9마디(2.5s). 백엔드 5테스트 통과.
 - [x] **F2. 성부명 표시** ✅ (2026-06-24): 툴바 `#voice-names`에 성부색 칩(배경 반투명+테두리), 피아노롤 좌측에 중간음 Y 위치 기준 성부색 레이블. 음정 성부만 표시(리듬 트랙 제외).
-- [ ] **F3. 캐시 무효화** — 분석 결과에 버전 해시 부착, 파이프라인 변경 시 자동 무효.
+- [x] **F3. 캐시 무효화** ✅ (2026-06-24): `PIPELINE_HASH` — 서버 기동 시 analyzer.py+classifier.py SHA1 앞 8자리 계산. 캐시 파일명 `{file_sha1}_{PIPELINE_HASH}.json`으로 변경. 코드 변경 시 자동 무효, 구 캐시 파일은 방치(수동 삭제).
 
 ## Phase H — 공유 섬 + 순환 횡단 (ADR 0013, 영상1 핵심 — ADR 0014 우선)
 
