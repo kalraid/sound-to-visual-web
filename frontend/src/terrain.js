@@ -91,6 +91,9 @@ export class Terrain {
     this.helixRot = 0;            // I3: 나선 전역 회전각(라디안, lap 구동)
     this.lapSec = 8;              // I3: 한 바퀴(lap) 시간 — load 시 코드주기/마디로 계산
     this._crossState = {};        // I5: 성부쌍 교차 근접 상태(이벤트 에지 감지용)
+    this.convergeOn = false;      // I6: 다운비트 수렴 토글
+    this.convergence = 0;         // I6: [0,1] — 다운비트에서 1로 튀고 감쇠
+    this._prevPosition = 0;       // I6: 마디 경계 감지용 이전 재생 위치
     this._lastAnalysis = null;
     this._lastMaxVoices = 0;
     // D3: 섹션 전환 추적 (카메라 호핑 + HUD)
@@ -274,6 +277,7 @@ export class Terrain {
   // I1: 롤러코스터 — 레일 재구성 + 지형 가시성 토글(재빌드 불필요).
   setPathMode(v) { this.pathMode = v; this._buildCoasterRails(); }
   setCornerReflect(on) { this.cornerReflect = on; this._buildCornerReflect(); }
+  setConverge(on) { this.convergeOn = on; this.convergence = 0; }
 
   // I3: lap(한 바퀴) 시간 결정 — 코드 진행 주기 → 마디 → 고정 기본값(ADR 0015 / Q9).
   // 마디 데이터가 부실하면 lap이 과도하게 길/짧아질 수 있어 [3,16]초로 클램프(항상 체감 가능).
@@ -291,9 +295,14 @@ export class Terrain {
 
   // I2: 공유 피치 나선 좌표(회전 미적용 원점 좌표). midi → 나선 위의 한 점.
   // 같은 음은 항상 같은 점 → 교차. 전역 회전(I3)은 coasterGroup/큐브에 일괄 적용.
+  // I7: 광역 음역(옥타브 많음) 시 높이 압축 — 최대 높이 20 단위로 클램프.
+  _helixOctH() {
+    const span = Math.max(12, this.pitchMax - this.pitchMin);
+    return Math.min(HELIX_OCT_H, (20 * 12) / span);
+  }
   _helixPos(midi) {
     const theta = (midi / 12) * Math.PI * 2;
-    const y = HELIX_Y0 + (midi - this.pitchMin) * (HELIX_OCT_H / 12);
+    const y = HELIX_Y0 + (midi - this.pitchMin) * (this._helixOctH() / 12);
     return { x: HELIX_R * Math.cos(theta), y, z: HELIX_R * Math.sin(theta) };
   }
 
@@ -1067,7 +1076,20 @@ export class Terrain {
       // I3: 전역 회전 — 1바퀴 = 1 lap(코드 진행 주기). 재생 위치가 회전을 구동.
       this.helixRot = (position / (this.lapSec || 8)) * (Math.PI * 2);
       this.coasterGroup.rotation.y = this.helixRot;
+      // I6: 다운비트 수렴 — 마디 경계마다 convergence=1, 이후 감쇠.
+      if (this.convergeOn) {
+        const measures = this._lastAnalysis?.measures || [];
+        const crossed = measures.some(
+          (m) => m.startSec > this._prevPosition && m.startSec <= position
+        );
+        if (crossed) this.convergence = 1.0;
+        this.convergence = Math.max(0, this.convergence - dt * 2.2);
+      }
     }
+    this._prevPosition = position;
+    // I6: 수렴 중심점(미리 계산)
+    const octH = this._helixOctH();
+    const helixYMid = HELIX_Y0 + Math.max(1, this.pitchMax - this.pitchMin) * (octH / 12) * 0.5;
     for (const v of this.voices) {
       // C2 시차 추격: 후행 성부는 선행 성부의 트랙(레인) 위에서 lagSec 만큼 뒤 시점을
       // 달려 같은 구조를 '추격'한다. 비캐논/토글 off면 자기 트랙·현재시각 그대로.
@@ -1095,6 +1117,10 @@ export class Terrain {
       } else {
         const p = dioOn ? this._worldXZ(t, effectiveLaneZ) : { wx: t * X_PER_SEC, wz: effectiveLaneZ };
         v.cube.position.set(p.wx, y + CUBE / 2, p.wz);
+      }
+      // I6: 수렴 — 마디마다 큐브를 나선 중심축으로 끌어당김
+      if (this.convergeOn && this.convergence > 0 && this.pathMode === "coaster") {
+        v.cube.position.lerp(new THREE.Vector3(0, helixYMid, 0), this.convergence * 0.72);
       }
       if (v.flash > 0) {
         v.flash = Math.max(0, v.flash - dt * 3);
@@ -1125,12 +1151,21 @@ export class Terrain {
   }
 
   _updateCamera(position) {
-    // I2: 피치 나선 — 나선 전체가 보이게 옆·위에서 부감. 중심축을 바라본다.
+    // I2/I7: 피치 나선 — 나선 전체 가시성 + 느린 궤도 회전(helixRot × 0.25 위상 오프셋).
     if (this.pathMode === "coaster") {
+      const octH = this._helixOctH();
       const span = Math.max(1, this.pitchMax - this.pitchMin);
-      const yMid = HELIX_Y0 + span * (HELIX_OCT_H / 12) * 0.5;
-      const desired = new THREE.Vector3(0, yMid + HELIX_R * 1.4, HELIX_R * 2.6);
-      this.camera.position.lerp(desired, 0.06);
+      const helixH = span * (octH / 12);
+      const yMid = HELIX_Y0 + helixH * 0.5;
+      // I7: helixRot에 느린 위상 오프셋 → 카메라가 나선 주위를 서서히 공전
+      const camAngle = this.helixRot * 0.25 + Math.PI * 0.3;
+      const camR = HELIX_R * 2.6;
+      const desired = new THREE.Vector3(
+        Math.cos(camAngle) * camR,
+        yMid + Math.max(8, helixH * 0.65),
+        Math.sin(camAngle) * camR,
+      );
+      this.camera.position.lerp(desired, 0.05);
       this.camera.lookAt(0, yMid, 0);
       return;
     }

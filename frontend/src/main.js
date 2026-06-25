@@ -31,7 +31,7 @@ const PRESET_REF = {
   "ribbon-select": "straight", "chord-select": "merged",
   "bg-select": "grid", "beat-select": "drum",
   "camera-select": "overhead", "camdir-select": "right",
-  "score-select": "osmd", "corner-roll-select": "off", "path-select": "straight",
+  "score-select": "osmd", "corner-roll-select": "off", "path-select": "straight", "converge-select": "off",
 };
 const PRESET_ORIG = {
   "shape-select": "smooth", "style-select": "glow", "track-select": "wide",
@@ -40,7 +40,7 @@ const PRESET_ORIG = {
   "ribbon-select": "straight", "chord-select": "merged",
   "bg-select": "grid", "beat-select": "drum",
   "camera-select": "overhead", "camdir-select": "right",
-  "score-select": "osmd", "corner-roll-select": "off", "path-select": "straight",
+  "score-select": "osmd", "corner-roll-select": "off", "path-select": "straight", "converge-select": "off",
 };
 
 function applyPreset(preset) {
@@ -183,6 +183,7 @@ $("corner-roll-select").addEventListener("change", (e) => {
   $("mini-roll").style.display = e.target.value === "on" ? "" : "none";
 });
 $("corner-reflect-select").addEventListener("change", (e) => terrain.setCornerReflect(e.target.value === "on"));
+$("converge-select").addEventListener("change", (e) => terrain.setConverge(e.target.value === "on"));
 $("score-select").addEventListener("change", (e) => {
   scoreMode = e.target.value;
   const usePiano = scoreMode === "pianoroll";
@@ -244,6 +245,7 @@ async function uploadFile(file) {
   terrain.ribbonMode = $("ribbon-select").value;
   terrain.pathMode = $("path-select").value;
   terrain.cornerReflect = $("corner-reflect-select").value === "on";
+  terrain.convergeOn = $("converge-select").value === "on";
   terrain.load(analysis, maxVoices);
   await score.load(analysis);
   await pianoroll.load(analysis);
